@@ -1,1 +1,1 @@
-Code and data to support the manuscript "Skill testing oxygen data for species distribution modeling of marine species" by Indivero et al. Data files too large need to be accessed by contacting the authors.
+Code and data to support the manuscript "Skill testing oxygen data for species distribution modeling of marine species" by Indivero et al. Data files too large (raw fish catch, GLORYS netcdf, and raw CalCOFI) need to be accessed by contacting the authors.
