@@ -5,7 +5,7 @@ library(lubridate)
 library(sf)
 library(seacarb)
 
-basewd <-"~/Dropbox/GitHub/o2-sdm"
+basewd <-"~/o2-sdm-paper"
 setwd(basewd)
 
 source("code/util_funs.R")

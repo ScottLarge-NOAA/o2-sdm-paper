@@ -14,7 +14,7 @@ library(tidync)
 theme_set(theme_bw(base_size = 25))
 theme_update(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
 
-basewd <-"~/Dropbox/GitHub/o2-sdm"
+basewd <-"o2-sdm-paper"
 
 setwd(basewd)
 source("code/util_funs.R")

@@ -3,6 +3,9 @@ library(reticulate)
 install.packages("lubridate")
 library(lubridate)
 
+#Set directory
+setwd("o2-sdm-paper")
+
 #Create virtual environment and install copernismarine
 virtualenv_create(envname = "CopernicusMarine")
 
@@ -13,15 +16,15 @@ reticulate::use_virtualenv("CopernicusMarine", required = TRUE)
 #Store "copernicusmarine" package in variable to use toolbox functions
 cmt <- import("copernicusmarine")
 
-#Create login
-cmt$login("jindivero1", "Password1")
+#Create login--add username and password
+cmt$login("", "")
 
 starts <- seq(ymd(19930501), ymd(20240501), by="1 year")
 ends <- seq(ymd(19931030), ymd(20241030), by="1 year")
 starts <- as.character(starts)
 ends <- as.character(ends)    
 
-outdir <- setwd("C:/Users/jindiv/Dropbox/GLORYS/alaska_o2") # set work directory
+outdir <- setwd("GLORYS/alaska_o2") # set work directory
 
 #####Alaska#######
 for(i in 1:length(starts)){
@@ -42,7 +45,7 @@ cmt$subset(
 #IMPORTANT NOTE: need to manually enter Y in the console for length(starts) to answer the downloading prompt
 #############################################
 ###Second Alaska section
-outdir <- setwd("C:/Users/jindiv/Dropbox/GLORYS/alaska2_o2") # set work directory
+outdir <- setwd("/GLORYS/alaska2_o2") # set work directory
 
 #Alaska positive longitudes
 for(i in 1:length(starts)){
@@ -62,7 +65,7 @@ for(i in 1:length(starts)){
 }
 
 ##Temp/Sal Alaska2
-outdir <- setwd("C:/Users/jindiv/Dropbox/GLORYS/alaska2_ts") # set work directory
+outdir <- setwd("GLORYS/alaska2_ts") # set work directory
 
 for(i in 1:length(starts)){
   cmt$subset(
@@ -81,7 +84,7 @@ for(i in 1:length(starts)){
 }
 ################################
 ####Washington coast
-outdir <- setwd("C:/Users/jindiv/Dropbox/GLORYS/wc_o2") # set work directory
+outdir <- setwd("GLORYS/wc_o2") # set work directory
 
 ##Oxygen
 for(i in 1:length(starts)){
@@ -102,7 +105,7 @@ cmt$subset(
 
 ####################################
 ###British Columbia
-outdir <- setwd("C:/Users/jindiv/Dropbox/GLORYS/bc_o2") # set work directory
+outdir <- setwd("GLORYS/bc_o2") # set work directory
 for(i in 1:length(starts)){
 cmt$subset(
   dataset_id="cmems_mod_glo_bgc_my_0.25deg_P1D-m",
