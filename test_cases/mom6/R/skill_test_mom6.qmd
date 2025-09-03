@@ -18,7 +18,7 @@ There is a lack of environmental data—particularly dissolved oxygen—at the s
 
 2.  Methodology from Indivero et al., 2025
 
-Using these methods, ee evaluate the validity of MOM6 oxygen outputs for use in age-structured short-term forecasts of Pacific hake.
+Using these methods, we evaluate the validity of MOM6 oxygen outputs for use in age-structured short-term forecasts of Pacific hake.
 
 ```{r setup,include=F,warning=F,message=F}
 library(tidyverse)
@@ -88,16 +88,18 @@ Then we prepare the MOM6 data for analysis. Here we grab 3D MOM6 oxygen output f
 
 ## Nearest Neighbor Analysis
 
-We start our exploration by conducting a simple nearest neighbor analysis to evaluate how well the raw MOM6 output matches the in situ data.
+We start our exploration by conducting a simple nearest neighbor analysis to evaluate how well the raw MOM6 output matches the in situ data. MOM6 data in interpolated using bilinear interpolation between spatial point (lat, lon), and linear interpolation between depths.
 
 ```{r}
 #| echo: false
 
 nn <- readRDS(here::here("test_cases/mom6/data/nearest_neighbor.rds"))
-# still have some NAs here because I haven't coded filling in NA values for the 3D version yet
+# still have some NAs here because I haven't coded filling in NA values for the 3D version of add_mom() yet
+# I'm subsetting by the raw MOM6 values (o2_nn, includes bilinear interpolation)
+# because the linear interpolation for depth at NA points was inprecise  
 nn <- nn[!is.na(nn$o2_nn),]
 
-# Find the global O2 range across both datasets
+# Find the global O2 range across both columns
 o2_range <- range(c(nn$o2, nn$o2_nn_interp), na.rm = TRUE)
 
 # histogram of in situ data
@@ -153,13 +155,8 @@ rmse(nn$o2, nn$o2_nn_interp)
 # create 1:1 plot of predicted and observed
 ggplot(data = nn, aes(x = o2, y = o2_nn_interp, col = depth)) +
           geom_point() +
-          scale_colour_distiller(
-            # limits = c(31, 50),
-            #oob = scales::squish,
-            name = "Depth",
-            palette="Greys"
-            # breaks = c(35, 40, 45)
-          ) +
+          scale_colour_gradientn(colours = brewer.pal(9, "Blues")[3:9],  
+          name = "Depth") +
           theme(legend.position = "bottom") +
           plot_theme +
           labs(x = "Observed (in situ CTD)", y = "Predicted (MOM6 output") +
@@ -175,11 +172,13 @@ ggplot(data = nn, aes(x = o2, y = o2_nn_interp, col = depth)) +
 nn$resids <- nn$o2 - nn$o2_nn_interp
 
 # plot
-ggplot(data = nn, aes(x = (o2_nn_interp), y = resids)) +
+ggplot(data = nn, aes(x = (o2_nn_interp), y = resids, col = depth)) +
     geom_point() +
     labs(x = "MOM6 o2 output", y = "Residuals (in situ - MOM6") +
     plot_theme +
-    theme(legend.position = "none") 
+    scale_colour_gradientn(colours = brewer.pal(9, "Blues")[3:9],  
+          name = "Depth") +
+  theme(legend.position = "bottom") 
 
 ```
 
@@ -197,6 +196,8 @@ ggplot(data = nn, aes(x = (o2_nn_interp), y = depth)) +
 
 ```{r}
 #| echo: false
+#| message: false
+#| warning: false
 
 # load coastline data
 load(here::here("test_cases/mom6/data/namerica_state_wgs_df.RData"))
