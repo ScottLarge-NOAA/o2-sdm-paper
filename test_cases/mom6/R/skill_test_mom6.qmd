@@ -1,0 +1,481 @@
+---
+title: "Skill Testing MOM6 Oxygen"
+author: "Olivia Gemmell"
+date: "27 Aug 2025"
+format: 
+  gfm:
+    toc: true
+    toc_float: true
+    toc-title: "Navigation"
+editor: source
+---
+
+## Purpose
+
+There is a lack of environmental data—particularly dissolved oxygen—at the same temporal and spatial resolution as biological data, which can limit species distribution analyses. Estimates from oceanographic models can be used in place of direct in situ data, but their ability to accurately represent in situ data remains untested. Here, we skill test 3D MOM6 oxygen data outputs against in situ [CTD data](https://www.fisheries.noaa.gov/west-coast/science-data/oceanographic-and-ecosystem-sampling-during-pacific-hake-survey#measuring-conductivity-temperature-and-depth) collected during the Joint U.S.-Canada Pacific Hake Acoustic Trawl Survey following two methods:
+
+1.  A simple nearest neighbour analysis
+
+2.  Methodology from Indivero et al., 2025
+
+Using these methods, ee evaluate the validity of MOM6 oxygen outputs for use in age-structured short-term forecasts of Pacific hake.
+
+```{r setup,include=F,warning=F,message=F}
+library(tidyverse)
+library(rnaturalearth)
+library(sf)
+library(here)
+library(ncdf4)
+library(marmap)
+library(terra)
+library(tidync)
+library(viridis)
+library(readxl)
+library(purrr)
+library(mapview)
+library(devtools)
+library(FishStatsUtils)
+library(readr)
+library(sdmTMB)
+library(ggpubr)
+library(furrr)
+library(Metrics)
+library(patchwork)
+
+# create plot theme
+plot_theme <- theme_bw() +
+          theme(panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            panel.border = element_blank(),
+            strip.background = element_blank(),
+            strip.text = element_blank()
+          ) +
+          theme(axis.line = element_line(color = "black")) +
+          theme(axis.text = element_text(size = 11)) +
+          theme(axis.title = element_text(size = 12)) +
+          theme(legend.text = element_text(size = 11))
+
+```
+
+## Prepare Data
+
+### Process in situ data
+
+First we process the in situ CTD data so it's ready to use to calculate RMSE. See 01-process_o2_obs.R for code.
+
+```{r}
+#| echo: false
+in_situ <- readRDS(here::here("test_cases/mom6/data/all_o2_dat_region.rds"))
+glimpse(in_situ)
+```
+
+### Create region polygons and add NOAA bathymetry
+
+Next, we create region polygons and add NOAA bathymetry data for model fitting later. We create separate regions for British Columbia and the California Current but we will be focusing on the combined region that includes both areas (i.e., "bc_cc") for this anaylsis. We also restrict the dataset to depths less than 500 m because the CTD casts only go that deep. See 02-estimate_depths_by_region.R for code.
+
+```{r}
+
+# load regional polygons
+regions.hull <- readRDS(here::here("test_cases/mom6/data/regions_hull.rds"))
+# Map regions
+mapview(regions.hull)
+
+```
+
+### Prepare MOM6 data
+
+Then we prepare the MOM6 data for analysis. Here we grab 3D MOM6 oxygen output from the [CEFI portal](https://psl.noaa.gov/cefi_portal/) by year, convert it to a dataframe and match the format to the in situ data (i.e., match column naming, convert o2 units etc.). See 03-prep_mom6.R for code.
+
+## Nearest Neighbor Analysis
+
+We start our exploration by conducting a simple nearest neighbor analysis to evaluate how well the raw MOM6 output matches the in situ data.
+
+```{r}
+#| echo: false
+
+nn <- readRDS(here::here("test_cases/mom6/data/nearest_neighbor.rds"))
+# still have some NAs here because I haven't coded filling in NA values for the 3D version yet
+nn <- nn[!is.na(nn$o2_nn),]
+
+# Find the global O2 range across both datasets
+o2_range <- range(c(nn$o2, nn$o2_nn_interp), na.rm = TRUE)
+
+# histogram of in situ data
+p1 <- ggplot(nn, aes(x = o2)) +
+  geom_histogram(bins = 30, alpha = 0.6, position = "identity") +
+  scale_fill_viridis_d() +
+  scale_x_continuous(limits = o2_range) + 
+  scale_y_continuous(limits = c(0, 10000)) + 
+  plot_theme +
+  labs(
+    title = "In situ",
+    x = "Dissolved Oxygen (µmol/kg)",
+    y = "Count"
+  )
+
+# histograms of MOM6 data
+p2 <- ggplot(nn, aes(x = o2_nn_interp)) +
+  geom_histogram(bins = 30, alpha = 0.6, position = "identity") +
+  scale_fill_viridis_d() +
+  scale_x_continuous(limits = o2_range) + 
+  scale_y_continuous(limits = c(0, 10000)) + 
+  plot_theme +
+  labs(
+    title = "MOM6",
+    x = "Dissolved Oxygen (µmol/kg)",
+    y = "Count"
+  )
+
+
+# Combine plots side by side with shared legend
+p1 + p2 + plot_layout(guides = "collect") & theme(legend.position = "bottom")
+
+
+```
+
+```{r}
+
+# Calculate RMSE by year
+nn %>%
+  group_by(year) %>%
+  summarise(
+    rmse = rmse(o2, o2_nn_interp)
+  )
+
+# Calculate total RMSE 
+rmse(nn$o2, nn$o2_nn_interp)
+
+```
+
+```{r}
+#| echo: false
+
+# create 1:1 plot of predicted and observed
+ggplot(data = nn, aes(x = o2, y = o2_nn_interp, col = depth)) +
+          geom_point() +
+          scale_colour_distiller(
+            # limits = c(31, 50),
+            #oob = scales::squish,
+            name = "Depth",
+            palette="Greys"
+            # breaks = c(35, 40, 45)
+          ) +
+          theme(legend.position = "bottom") +
+          plot_theme +
+          labs(x = "Observed (in situ CTD)", y = "Predicted (MOM6 output") +
+          geom_abline(intercept = 0, slope = 1)+
+          theme(legend.position="bottom")
+
+```
+
+```{r}
+#| echo: false
+
+# calculate and plot residuals
+nn$resids <- nn$o2 - nn$o2_nn_interp
+
+# plot
+ggplot(data = nn, aes(x = (o2_nn_interp), y = resids)) +
+    geom_point() +
+    labs(x = "MOM6 o2 output", y = "Residuals (in situ - MOM6") +
+    plot_theme +
+    theme(legend.position = "none") 
+
+```
+
+```{r}
+#| echo: false
+
+# plot oxygen by depth
+ggplot(data = nn, aes(x = (o2_nn_interp), y = depth)) +
+    geom_point(alpha = 0.1) +
+    labs(x = "MOM6 o2 output", y = "Depth") +
+    plot_theme +
+    theme(legend.position = "none") 
+
+```
+
+```{r}
+#| echo: false
+
+# load coastline data
+load(here::here("test_cases/mom6/data/namerica_state_wgs_df.RData"))
+
+# calculate mean o2 by location- in situ
+o2_by_location <- nn %>%
+  group_by(longitude, latitude) %>%
+  dplyr::summarise(mean_o2 = mean(o2, na.rm = TRUE)) %>%
+  ungroup()
+
+# calculate mean o2 by location- MOM6
+o2_by_location_mom6 <- nn %>%
+  group_by(longitude, latitude) %>%
+  dplyr::summarise(mean_o2 = mean(o2_nn_interp, na.rm = TRUE)) %>%
+  ungroup()
+
+# Merge in situ and MOM6 mean O2 by location
+o2_diff <- o2_by_location %>%
+  rename(mean_o2_obs = mean_o2) %>%
+  inner_join(o2_by_location_mom6 %>% rename(mean_o2_mom6 = mean_o2),
+             by = c("longitude", "latitude")) %>%
+  mutate(diff_o2 = mean_o2_mom6 - mean_o2_obs)
+
+# Find the global O2 range across both datasets
+o2_range <- range(c(o2_by_location$mean_o2, o2_by_location_mom6$mean_o2), na.rm = TRUE)
+
+# Find symmetric range for difference plot color scale
+diff_range <- max(abs(o2_diff$diff_o2), na.rm = TRUE)
+
+# First plot: In situ O2
+p1 <- ggplot(o2_by_location) +
+  geom_sf(data = namerica_state_wgs_df,
+          fill = NA, color = "grey10", size = 0.2) +
+  geom_point(aes(x = longitude, y = latitude, color = mean_o2),
+             size = 0.1,
+             alpha = 0.6) +
+  ylab("Latitude") +
+  xlab("Longitude") +
+  xlim(min(nn$longitude, na.rm = TRUE), max(nn$longitude, na.rm = TRUE)) +
+  ylim(min(nn$latitude, na.rm = TRUE), max(nn$latitude, na.rm = TRUE)) +
+  labs(title = "Mean In Situ O2 Values") +
+  scale_color_viridis(option = "viridis", limits = o2_range, name = "O2 (µmol/kg)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(size = 10))
+
+# Second plot: MOM6 O2
+p2 <- ggplot(o2_by_location_mom6) +
+  geom_sf(data = namerica_state_wgs_df,
+          fill = NA, color = "grey10", size = 0.2) +
+  geom_point(aes(x = longitude, y = latitude, color = mean_o2),
+             size = 0.1,
+             alpha = 0.6) +
+  ylab("Latitude") +
+  xlab("Longitude") +
+  xlim(min(nn$longitude, na.rm = TRUE), max(nn$longitude, na.rm = TRUE)) +
+  ylim(min(nn$latitude, na.rm = TRUE), max(nn$latitude, na.rm = TRUE)) +
+  labs(title = "Mean MOM6 O2 Values") +
+  scale_color_viridis(option = "viridis", limits = o2_range, name = "O2 (µmol/kg)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(size = 10))
+
+# Third plot: Difference (MOM6 - In Situ)
+p3 <- ggplot(o2_diff) +
+  geom_sf(data = namerica_state_wgs_df,
+          fill = NA, color = "grey10", size = 0.2) +
+  geom_point(aes(x = longitude, y = latitude, color = diff_o2),
+             size = 0.2, alpha = 0.7) +
+  ylab("Latitude") +
+  xlab("Longitude") +
+  xlim(min(nn$longitude, na.rm = TRUE), max(nn$longitude, na.rm = TRUE)) +
+  ylim(min(nn$latitude, na.rm = TRUE), max(nn$latitude, na.rm = TRUE)) +
+  labs(title = "Difference: MOM6 - In Situ", color = "ΔO2 (µmol/kg)") +
+  scale_color_gradient2(
+    low = "blue",
+    mid = "white",
+    high = "red",
+    midpoint = 0,
+    limits = c(-diff_range, diff_range)
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(size = 10))
+
+# Combine plots side by side with shared legend
+p1 + p2 + p3 + plot_layout(guides = "collect") & theme(legend.position = "bottom")
+
+
+```
+
+## Skill Testing Analysis
+
+Then we conduct an analysis following methodology from Indivero et al., 2025 to improve the skill of the MOM6 output.
+
+### Initial data checks
+
+```{r}
+#| echo: false
+
+# histogram of in situ data 
+in_situ_bc_cc <- in_situ[in_situ$region == "bc_cc", ]
+ggplot(in_situ_bc_cc, aes(x = o2)) +
+  geom_histogram(bins = 30, alpha = 0.6, position = "identity") +
+  scale_fill_viridis_d() +
+  theme_minimal() +
+  labs(
+    title = "Histogram of in situ O2 Values",
+    x = "Dissolved Oxygen (µmol/kg)",
+    y = "Count"
+  )
+```
+
+```{r}
+#| echo: false
+
+region_dat <- read_rds(file = here::here("test_cases/mom6/data/mom6/mom6_bc_cc.rds"))
+# restrict to < 500 m (hake habitat)
+region_dat <- region_dat[region_dat$depth <= 500, ]
+# remove negative values and NAs
+region_dat <- region_dat[!is.na(region_dat$o2 >= 0), ]
+
+# histograms of MOM6 data
+ggplot(region_dat, aes(x = o2)) +
+  geom_histogram(bins = 30, alpha = 0.6, position = "identity") +
+  scale_fill_viridis_d() +
+  theme_minimal() +
+  labs(
+    title = "Histogram of MOM6 O2 Values",
+    x = "Dissolved Oxygen (µmol/kg)",
+    y = "Count"
+  )
+
+```
+
+The data is left skewed so let's try and make it look more normally distributed using a reverse and log transformation (i.e., subtract oxygen values by the maximum oxygen value + 1 and log it).
+
+```{r}
+#| echo: false
+
+
+# transformation for left skewed data- reverse and log transform
+constant <- max(region_dat$o2) + 1 # make sure all values are positive
+region_dat$o2_transformed <- log(constant - region_dat$o2)
+
+
+# histograms of MOM6 data
+ggplot(region_dat, aes(x = o2_transformed)) +
+  geom_histogram(bins = 30, alpha = 0.6, position = "identity") +
+  scale_fill_viridis_d() +
+  theme_minimal() +
+  labs(
+    title = "Histogram of MOM6 O2 Values",
+    x = "Dissolved Oxygen (µmol/kg)",
+    y = "Count"
+  )
+```
+
+This looks worse so we will use the untransformed oxygen values for modeling.
+
+Looking at the distribution of the MOM6 data we can see that it is bimodal and not normally distributed. This could cause issues in model fitting but we will continue and see how the models look.
+
+```{r}
+
+# Plot MOM6 depth by o2
+
+# Plot o2 ins space- facet by depth?
+
+
+```
+
+### Fit GLMM to MOM6 output and calculate RMSE
+
+### 
+
+```{r}
+#| echo: false
+
+# # parallel
+# results <- mom6_fit_p(
+#   yearlist = unique(in_situ$year),
+#   test_region = "bc_cc",
+#   regions.hull = regions.hull,
+#   dat.2.use = dat.2.use
+# )
+# 
+# print(results)
+
+# serial 
+rmse_bc_cc <- mom6_fit(dat = in_situ,
+                    test_region = "bc_cc", 
+                    plot_title = "British Columbia and California Current")
+
+rmse_bc_cc$rmse_summary
+
+```
+
+#### 2011
+
+```{r}
+#| echo: false
+
+# Calculate dharma residuals 
+mod <- rmse_bc_cc$models[[1]]
+sim_resids <- simulate(mod, nsim = 500, type = "mle-mvn")
+dharma_residuals(sim_resids, mod)
+plot(sim_resids)
+
+```
+
+```{r}
+#| echo: false
+
+
+# print out the figure 
+rmse_bc_cc$output[[1]]$figure 
+```
+
+#### 2012
+
+```{r}
+#| echo: false
+
+# Calculate dharma residuals 
+mod <- rmse_bc_cc$models[[2]]
+sim_resids <- simulate(mod, nsim = 500, type = "mle-mvn")
+dharma_residuals(sim_resids, mod)
+plot(sim_resids)
+
+```
+
+```{r}
+#| echo: false
+
+
+# print out the figure 
+rmse_bc_cc$output[[2]]$figure 
+```
+
+#### 2013
+
+```{r}
+#| echo: false
+
+# Calculate dharma residuals 
+mod <- rmse_bc_cc$models[[3]]
+sim_resids <- simulate(mod, nsim = 500, type = "mle-mvn")
+dharma_residuals(sim_resids, mod)
+plot(sim_resids)
+
+```
+
+```{r}
+#| echo: false
+
+
+# print out the figure 
+rmse_bc_cc$output[[3]]$figure 
+```
+
+#### 2015
+
+```{r}
+#| echo: false
+
+# Calculate dharma residuals 
+mod <- rmse_bc_cc$models[[4]]
+sim_resids <- simulate(mod, nsim = 500, type = "mle-mvn")
+dharma_residuals(sim_resids, mod)
+plot(sim_resids)
+
+```
+
+```{r}
+#| echo: false
+
+
+# print out the figure 
+rmse_bc_cc$output[[4]]$figure 
+```
+
+#### 
