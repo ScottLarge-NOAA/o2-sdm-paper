@@ -2,6 +2,10 @@
 # 04-nearest_neighbor_analysis.R
 #
 # Grabs MOM6 output at location, depth, and date of each in situ observation, 
+# bilinearily interpolates between spatial points (lat, lon), and linearly 
+# interpolates between depths, saves a dataframe with in situ data plus two 
+# columns including bilinearly interpolated MOM6 o2 values (o2_nn), and 
+# including bilinearly and linearly interpolated MOM6 o2 values (o2_nn_interp)
 # 
 # Step 4: Compare MOM6 and in situ oxygen data using a simple nearest neighbor 
 # analysis
@@ -24,7 +28,8 @@ root_dir <- "test_cases/mom6/"
 source(paste0(root_dir, "R/helper_funs.R"))
 
 # ------------------------------------------------------------------------------
-# Grab MOM6 data at location, depth, and date of in situ data
+# Grab MOM6 data at location, depth, and date of in situ data- include bilinear 
+# interpolation (in get_mom6())
 # ------------------------------------------------------------------------------
 # load in situ data
 in_situ <- readRDS(paste0(root_dir, "data/all_o2_dat_region.rds"))
@@ -85,13 +90,14 @@ for(d in depths){
 in_situ$o2_nn <- in_situ$o2_nn*1000000
 
 # ------------------------------------------------------------------------------
-# interpolate o2_nn values to match exact depths from CTD casts
+# Linearly interpolate o2_nn values to match exact depths from CTD casts
 # ------------------------------------------------------------------------------
 # group by location and interpolate
 # if the group has only 1 valid o2_nn value assign that value to all depths in 
 # group 
 # if all o2_nn values are NA in the group assign NA
-# will assign values on the tail ends the nearest o2_nn value 
+# will assign values on the tail ends the nearest o2_nn value- results in a 
+# number of repeated values
 in_situ <- in_situ %>%
   group_by(longitude, latitude) %>%
   mutate(o2_nn_interp = {
