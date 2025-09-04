@@ -14,6 +14,297 @@ simplify_df <- function(input_dat, makedoy = F) {
   return(output_dat)
 }
 
+calc_rmse <- function(rmse_list, n){
+  rmse2 <- as.data.frame(rmse_list)
+  rmse2$n <- n
+  rmse2 <- filter(rmse2, n>50)
+  rmse2$rmse2 <- rmse2$rmse_list ^ 2
+  rmse2$xminusxbarsq <- rmse2$n * rmse2$rmse2
+  rmse2 <- drop_na(rmse2, xminusxbarsq)
+  rmse_total<- sqrt(sum(rmse2$xminusxbarsq, na.rm=T) / sum(rmse2$n, na.rm=T))
+  return(rmse_total)
+}
+
+plot_mom6 <- function(preds, dat.2.use, root_dir){
+  #Separate test and training data, predictions, and models from output list
+  #Set latitude and longitude
+  xlims <- c(min(dat.2.use$X)*1000, max(dat.2.use$X)*1000)
+  ylims <- c(min(dat.2.use$Y)*1000, max(dat.2.use$Y)*1000)
+  lats <- c(round(min(dat.2.use$latitude)),  round(max(dat.2.use$latitude)))
+  lons <- c(round(min(dat.2.use$longitude)+2), round(max(dat.2.use$longitude)))
+  test_region <- unique(preds$region)
+  test_year <- unique(preds$year)
+  
+  # average by location
+  mean_preds <- preds %>%
+    group_by(X, Y) %>%
+    dplyr::summarise(o2 = mean(o2, na.rm = TRUE),
+                     residual = mean(residual, na.rm = TRUE),
+                     est = mean(est, na.rm = TRUE) ) %>%
+    ungroup()
+  
+  res_range <- max(abs(preds$residual), na.rm = TRUE)
+  
+  try(pred_plot <-  ggplot(us_coast_proj) + geom_sf() +
+        geom_point(mean_preds, mapping=aes(x=X*1000, y=Y*1000, col=o2),
+                   size = 1.0,
+                   alpha = 1.0
+        ) +
+        ylim(ylims)+
+        scale_x_continuous(breaks=lons, limits=xlims)+
+        scale_colour_viridis_c(
+          limits = c(0, 200),
+          oob = scales::squish,
+          name = bquote(O[2]~Predictions),
+          breaks = c(0, 100, 200)
+        ) +
+        labs(x = "Longitude", y = "Latitude") +
+        theme_bw() +
+        theme(
+          panel.grid.major = element_blank()
+          ,
+          panel.grid.minor = element_blank()
+          ,
+          panel.border = element_blank()
+          ,
+          strip.background = element_blank()
+          ,
+          strip.text = element_blank()
+        ) +
+        theme(axis.line = element_line(color = "black")) +
+        theme(axis.text = element_text(size = 11)) +
+        theme(axis.title = element_text(size = 12)) +
+        theme(legend.text = element_text(size = 11)) +
+        theme(legend.position = "bottom") +
+        guides(colour = guide_colourbar(title.position = "top", title.hjust =
+                                          0.5)))+
+    ggtitle("Predictions")
+  
+  try(resid_plot <-  ggplot(us_coast_proj) + geom_sf() +
+        geom_point(mean_preds, mapping=aes(x=X*1000, y=Y*1000, col=residual),
+                   size = 1.0,
+                   alpha = 1.0
+        ) +
+        scale_colour_distiller(
+          palette = "RdBu",
+          # limits = c(-res_range, res_range),  # Center around 0
+          limits = c(-50, 50), 
+          oob = scales::squish
+        ) +
+        ylim(ylims)+
+        scale_x_continuous(breaks=lons, limits=xlims)+
+        #, limits = c(-40, 40), oob = scales::squish, name = bquote(O[2]), breaks = c(-40, 0, 40)) +
+        labs(x = "Longitude", y = "Latitude") +
+        theme_bw() +
+        theme(
+          panel.grid.major = element_blank()
+          ,
+          panel.grid.minor = element_blank()
+          ,
+          panel.border = element_blank()
+          ,
+          strip.background = element_blank()
+          ,
+          strip.text = element_blank()
+        ) +
+        theme(axis.line = element_line(color = "black")) +
+        theme(axis.text = element_text(size = 11)) +
+        theme(axis.title = element_text(size = 12)) +
+        theme(legend.text = element_text(size = 11)) +
+        theme(legend.position = "bottom") +
+        guides(colour = guide_colourbar(title.position = "top", title.hjust =
+                                          0.5)))+
+    ggtitle("Prediction Residuals")
+  
+  try(pred_obs <- ggplot(data = preds, aes(x = o2, y = est, col = latitude)) +
+        geom_point() +
+        scale_colour_distiller(
+          # limits = c(31, 50),
+          #oob = scales::squish,
+          name = "latitude",
+          palette="Greys"
+          # breaks = c(35, 40, 45)
+        ) +
+        theme(legend.position = "bottom") +
+        theme_bw() +
+        theme(
+          panel.grid.major = element_blank()
+          ,
+          panel.grid.minor = element_blank()
+          ,
+          panel.border = element_blank()
+          ,
+          strip.background = element_blank()
+          ,
+          strip.text = element_blank()
+        ) +
+        theme(axis.line = element_line(color = "black")) +
+        theme(axis.text = element_text(size = 11)) +
+        theme(axis.title = element_text(size = 12)) +
+        theme(legend.text = element_text(size = 11)) +
+        labs(x = "Observed", y = "Predicted") +
+        geom_abline(intercept = 0, slope = 1)+
+        theme(legend.position="bottom"))
+  
+  figure <- ggarrange(pred_plot, resid_plot, pred_obs, ncol=3, nrow=1, labels=c("A", "B", "C"), widths=c(1,1,2), heights=c(1,1,0.3))
+  annotate_figure(figure, top=paste(test_year), fig.lab.size=18, fig.lab.face="bold")
+  
+  ggsave(
+    here::here(paste0(root_dir, "output/plots/mom6_", test_region, "_", test_year, ".pdf")),
+    plot = last_plot(),
+    device = NULL,
+    path = NULL,
+    scale = 1,
+    width = 8.5,
+    height = 5.5,
+    units = c("in"),
+    dpi = 600,
+    limitsize = TRUE
+  )
+  return(figure)
+}
+
+#Function to fit model for a specific region
+mom6_fit <- function(dat, 
+                     test_region,
+                     root_dir,
+                     scale,
+                     quantile_transform){
+  ##Set up data
+  #Filter to region
+  dat.2.use <- as.data.frame(filter(dat, region==test_region))
+  
+  yearlist <- unique(dat.2.use$year)
+  
+  #Create lists and matrices for storing RMSE and list for storing prediction datasets
+  rmse_summary <- matrix(data=NA, nrow=length(yearlist), ncol=2)
+  colnames(rmse_summary) <- c("mom6", "n_test")
+  output <- list()
+  figures <- list()
+  models <- list() 
+  predictions <- list()
+  
+  ##For each year of testing data, load MOM6 data, crop to region, fit model, 
+  # and calculate RMSE
+  for (i in 1:length(yearlist)) {
+    test_year <- yearlist[i]
+    print(test_year)
+    test_data <- dat.2.use %>%
+      filter(year==test_year)
+    ## Load MOM6 data
+    mom6 <- readRDS(paste0(root_dir, "data/mom6/o2_df_", test_year, ".rds"))
+    # remove rows with depth > 500 m
+    mom6 <- mom6[mom6$depth <= 500, ]
+    # remove negative o2 values
+    mom6 <- mom6[mom6$o2 >= 0, ]
+    
+    ##Pull in survey extent polygons
+    # Regional polygon
+    poly <- filter(regions.hull, region==test_region)
+    #Convert MOM6 to sf
+    mom6_sf <-  st_as_sf(mom6, coords = c("longitude", "latitude"), crs = st_crs(4326))
+    # pull out observations within each region
+    region_dat  <- st_filter(mom6_sf, poly)
+    region_dat <- as.data.frame(region_dat)
+    
+    #Log depth
+    region_dat$depth_ln <- log(region_dat$depth)
+    
+    if(scale == TRUE){
+      region_dat$o2 <- region_dat$o2/100
+    }
+    
+    if(quantile_transform == TRUE){
+      # Apply ordered quantile normalization to o2 column
+      bn <- orderNorm(region_dat$o2)
+      # Create transformed column
+      region_dat$o2 <- predict(bn)
+    }
+    
+    region_dat <- region_dat %>%
+      drop_na(depth, o2, month, X, Y)
+    
+    #Mesh
+    spde <- make_mesh(data = region_dat,
+                      xy_cols = c("X", "Y"),
+                      cutoff = 45)
+    
+    #Fit model
+    print("fitting model")
+    m <- try(sdmTMB(formula = o2 ~ 1 + 
+                      s(depth_ln) + 
+                      as.factor(month), 
+                    mesh = spde,
+                    data = region_dat,
+                    family = gaussian(),
+                    spatial = "on",
+                    spatiotemporal  = "off"))
+    
+    # Store model in list with year-specific name
+    models[[paste0("m_", test_year)]] <- m
+    
+    ### Predictions ###
+    #Predict
+    test_predict_O2 <- try(predict(m, newdata = test_data))
+    #Re-scale
+    if(scale==T){
+      test_predict_O2$est <- test_predict_O2$est*100
+      test_predict_O2$o2 <- test_predict_O2$o2*100
+    }
+    if(quantile_transform == TRUE){
+      # save transformed data for response curve plotting 
+      test_predict_O2$est_transformed <- test_predict_O2$est
+      # test_predict_O2$est_non_rf_transformed <- test_predict_O2$est_non_rf
+      
+      # reverse transformation for estimated o2 values
+      test_predict_O2$est <- predict(bn, newdata = test_predict_O2$est, inverse = TRUE)
+      # test_predict_O2$est_non_rf <- predict(bn, newdata = test_predict_O2$est_non_rf, inverse = TRUE)
+      
+    }
+    #Residuals
+    test_predict_O2$residual = try(test_predict_O2$o2 - (test_predict_O2$est))
+    # Store predictions in list with year-specific name
+    predictions[[paste0("preds_", test_year)]] <- test_predict_O2
+    #RMSE
+    rmse_summary[i,1] <- try(rmse(test_predict_O2$o2, test_predict_O2$est), silent=T)
+    #Number of datapoints in each year for calculating overall RMSE later
+    rmse_summary[i,2] <- nrow(test_data)
+    
+    tmp.output <- list(region_dat, test_data, test_predict_O2, m)
+    names(tmp.output) <-c("mom6_data", "test_data", "predictions", "model")
+    output[[i]] <- tmp.output
+    
+    if(plotmodel){
+      print("plotting")
+      fig <- try(plot_mom6(test_predict_O2, dat.2.use, root_dir))
+      figures[[paste0("fig_", test_year)]] <- fig
+    }
+  }
+  
+  #Clean RMSE table
+  rmse_summary <- as.data.frame(rmse_summary)
+  rmse_summary$year <- yearlist
+  ##Save models
+  if (savemodel) {
+    save(x = output, file = paste0(root_dir, "output/o2_models/", test_region, ".Rdata"))
+  }
+  
+  #Calculate overall RMSE
+  rmse_total <- as.data.frame(calc_rmse(rmse_summary$mom6, rmse_summary$n_test))
+  colnames(rmse_total) <- "rmse_total"
+  rownames(rmse_total) <- "mom6"
+  
+  if(savemodel){
+    saveRDS(rmse_total, file=paste0(root_dir, "output/mom6_rmsetotal_", test_region, ".rds"))
+    saveRDS(rmse_summary, file=paste0(root_dir, "output/mom6_summary_", test_region, ".rds"))
+  }
+  
+  #Return results
+  return(list(rmse_summary = rmse_summary,
+              models = models,
+              predictions = predictions,
+              figures = figures))
+}
 
 ### Fetch one time × depth slice from MOM6 NetCDF ###
 fetch_slice <- function(t, 
@@ -434,3 +725,29 @@ convert_to_360 <- function(lon) {
   ifelse(lon < 0, lon + 360, lon)
 }
 # END convert_to_360()
+
+# ------------------------------------------------------------------------------
+# Plot response curve
+# ------------------------------------------------------------------------------
+# plot_resp_curve()
+plot_resp_curve <- function(p, p_pred, d_pred, xlab){
+  plot <- ggplot(p, aes(x = ({{p_pred}}*sd({{d_pred}})) + mean({{d_pred}}), 
+                        y = est,
+                        ymin = est - 1.96 * est_se, 
+                        ymax = est + 1.96 * est_se)) +
+    geom_line() + 
+    geom_ribbon(alpha = 0.4) + 
+    geom_vline(xintercept = min({{d_pred}}), 
+               color = "red",
+               lty = 2) +
+    geom_vline(xintercept = max({{d_pred}}), 
+               color = "red",
+               lty = 2) +
+    coord_cartesian(ylim = c(0, max(p$est)*1.5)) +
+    ylab("O2 (µmol/kg)") +
+    xlab(xlab) +
+    ggsidekick::theme_sleek()
+  plot
+}
+# END plot_resp_curve()
+
