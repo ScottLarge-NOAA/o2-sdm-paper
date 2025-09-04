@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.6.42">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="author" content="Olivia Gemmell">
+<meta name="dcterms.date" content="2025-08-27">
+
+<title>Skill Testing MOM6 Oxygen</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="skill_test_mom6_files/libs/clipboard/clipboard.min.js"></script>
+<script src="skill_test_mom6_files/libs/quarto-html/quarto.js"></script>
+<script src="skill_test_mom6_files/libs/quarto-html/popper.min.js"></script>
+<script src="skill_test_mom6_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="skill_test_mom6_files/libs/quarto-html/anchor.min.js"></script>
+<link href="skill_test_mom6_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="skill_test_mom6_files/libs/quarto-html/quarto-syntax-highlighting-2f5df379a58b258e96c21c0638c20c03.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="skill_test_mom6_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="skill_test_mom6_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="skill_test_mom6_files/libs/bootstrap/bootstrap-c0367b04c37547644fece4185067e4a7.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="skill_test_mom6_files/libs/htmltools-fill-0.5.8.1/fill.css" rel="stylesheet">
+<script src="skill_test_mom6_files/libs/htmlwidgets-1.6.4/htmlwidgets.js"></script>
+<script src="skill_test_mom6_files/libs/jquery-3.6.0/jquery-3.6.0.min.js"></script>
+<link href="skill_test_mom6_files/libs/leaflet-1.3.1/leaflet.css" rel="stylesheet">
+<script src="skill_test_mom6_files/libs/leaflet-1.3.1/leaflet.js"></script>
+<link href="skill_test_mom6_files/libs/leafletfix-1.0.0/leafletfix.css" rel="stylesheet">
+<script src="skill_test_mom6_files/libs/proj4-2.6.2/proj4.min.js"></script>
+<script src="skill_test_mom6_files/libs/Proj4Leaflet-1.0.1/proj4leaflet.js"></script>
+<link href="skill_test_mom6_files/libs/rstudio_leaflet-1.3.1/rstudio_leaflet.css" rel="stylesheet">
+<script src="skill_test_mom6_files/libs/leaflet-binding-2.2.2/leaflet.js"></script>
+<script src="skill_test_mom6_files/libs/leaflet-providers-2.0.0/leaflet-providers_2.0.0.js"></script>
+<script src="skill_test_mom6_files/libs/leaflet-providers-plugin-2.2.2/leaflet-providers-plugin.js"></script>
+<script src="skill_test_mom6_files/libs/HomeButton-0.0.1/home-button.js"></script>
+<script src="skill_test_mom6_files/libs/HomeButton-0.0.1/easy-button-src.min.js"></script>
+<link href="skill_test_mom6_files/libs/regions.hull-CSS-0.0.1/regions.hull_home-button.css" rel="stylesheet">
+<script src="skill_test_mom6_files/libs/clipboard-0.0.1/setClipboardText.js"></script>
+<link href="skill_test_mom6_files/libs/mapviewCSS-0.0.1/mapview-popup.css" rel="stylesheet">
+<link href="skill_test_mom6_files/libs/mapviewCSS-0.0.1/mapview.css" rel="stylesheet">
+
+
+</head>
+
+<body>
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+<div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+  <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">Table of contents</h2>
+   
+  <ul>
+  <li><a href="#purpose" id="toc-purpose" class="nav-link active" data-scroll-target="#purpose">Purpose</a></li>
+  <li><a href="#prepare-data" id="toc-prepare-data" class="nav-link" data-scroll-target="#prepare-data">Prepare Data</a>
+  <ul class="collapse">
+  <li><a href="#process-in-situ-data" id="toc-process-in-situ-data" class="nav-link" data-scroll-target="#process-in-situ-data">Process in situ data</a></li>
+  <li><a href="#create-region-polygons-and-add-noaa-bathymetry" id="toc-create-region-polygons-and-add-noaa-bathymetry" class="nav-link" data-scroll-target="#create-region-polygons-and-add-noaa-bathymetry">Create region polygons and add NOAA bathymetry</a></li>
+  <li><a href="#prepare-mom6-data" id="toc-prepare-mom6-data" class="nav-link" data-scroll-target="#prepare-mom6-data">Prepare MOM6 data</a></li>
+  </ul></li>
+  <li><a href="#nearest-neighbor-analysis" id="toc-nearest-neighbor-analysis" class="nav-link" data-scroll-target="#nearest-neighbor-analysis">Nearest Neighbor Analysis</a></li>
+  <li><a href="#skill-testing-analysis" id="toc-skill-testing-analysis" class="nav-link" data-scroll-target="#skill-testing-analysis">Skill Testing Analysis</a>
+  <ul class="collapse">
+  <li><a href="#initial-data-checks" id="toc-initial-data-checks" class="nav-link" data-scroll-target="#initial-data-checks">Initial data checks</a></li>
+  <li><a href="#fit-glmm-to-mom6-output-and-calculate-rmse" id="toc-fit-glmm-to-mom6-output-and-calculate-rmse" class="nav-link" data-scroll-target="#fit-glmm-to-mom6-output-and-calculate-rmse">Fit GLMM to MOM6 output and calculate RMSE</a></li>
+  </ul></li>
+  </ul>
+</nav>
+</div>
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Skill Testing MOM6 Oxygen</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    <div>
+    <div class="quarto-title-meta-heading">Author</div>
+    <div class="quarto-title-meta-contents">
+             <p>Olivia Gemmell </p>
+          </div>
+  </div>
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">August 27, 2025</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<section id="purpose" class="level2">
+<h2 class="anchored" data-anchor-id="purpose">Purpose</h2>
+<p>There is a lack of environmental data—particularly dissolved oxygen—at the same temporal and spatial resolution as biological data, which can limit species distribution analyses. Estimates from oceanographic models can be used in place of direct in situ data, but their ability to accurately represent in situ data remains untested. Here, we skill test 3D MOM6 oxygen data outputs against in situ <a href="https://www.fisheries.noaa.gov/west-coast/science-data/oceanographic-and-ecosystem-sampling-during-pacific-hake-survey#measuring-conductivity-temperature-and-depth">CTD data</a> collected during the Joint U.S.-Canada Pacific Hake Acoustic Trawl Survey following two methods:</p>
+<ol type="1">
+<li><p>A simple nearest neighbour analysis</p></li>
+<li><p>Methodology from Indivero et al., 2025</p></li>
+</ol>
+<p>Using these methods, we evaluate the validity of MOM6 oxygen outputs for use in age-structured short-term forecasts of Pacific hake.</p>
+</section>
+<section id="prepare-data" class="level2">
+<h2 class="anchored" data-anchor-id="prepare-data">Prepare Data</h2>
+<section id="process-in-situ-data" class="level3">
+<h3 class="anchored" data-anchor-id="process-in-situ-data">Process in situ data</h3>
+<p>First we process the in situ CTD data so it’s ready to use to calculate RMSE. See 01-process_o2_obs.R for code.</p>
+<div class="cell">
+<div class="cell-output cell-output-stdout">
+<pre><code>Rows: 220,357
+Columns: 15
+$ survey       &lt;chr&gt; "hake", "hake", "hake", "hake", "hake", "hake", "hake", "…
+$ year         &lt;dbl&gt; 2011, 2011, 2011, 2011, 2011, 2011, 2011, 2011, 2011, 201…
+$ month        &lt;dbl&gt; 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, …
+$ doy          &lt;int&gt; 222, 222, 222, 222, 222, 222, 222, 222, 222, 222, 222, 22…
+$ date         &lt;dttm&gt; 2011-08-11, 2011-08-11, 2011-08-11, 2011-08-11, 2011-08-…
+$ X            &lt;dbl&gt; 337.2117, 337.2117, 337.2117, 337.2117, 337.2117, 337.211…
+$ Y            &lt;dbl&gt; 5332.174, 5332.174, 5332.174, 5332.174, 5332.174, 5332.17…
+$ temp         &lt;dbl&gt; 14.7460, 14.7542, 14.7644, 14.5239, 12.9734, 12.4639, 12.…
+$ o2           &lt;dbl&gt; 285.0143, 281.9467, 271.9211, 250.1332, 235.7711, 231.910…
+$ salinity_psu &lt;dbl&gt; 31.1748, 31.1718, 31.1681, 31.2460, 31.6629, 31.7630, 31.…
+$ sigma0       &lt;dbl&gt; 23.08563, 23.08160, 23.07661, 23.18694, 23.82051, 23.9955…
+$ depth        &lt;dbl&gt; 2.975, 3.966, 4.958, 5.949, 6.941, 7.933, 8.924, 9.916, 1…
+$ longitude    &lt;dbl&gt; -125.1875, -125.1875, -125.1875, -125.1875, -125.1875, -1…
+$ latitude     &lt;dbl&gt; 48.122, 48.122, 48.122, 48.122, 48.122, 48.122, 48.122, 4…
+$ region       &lt;chr&gt; "bc", "bc", "bc", "bc", "bc", "bc", "bc", "bc", "bc", "bc…</code></pre>
+</div>
+</div>
+</section>
+<section id="create-region-polygons-and-add-noaa-bathymetry" class="level3">
+<h3 class="anchored" data-anchor-id="create-region-polygons-and-add-noaa-bathymetry">Create region polygons and add NOAA bathymetry</h3>
+<p>Next, we create region polygons and add NOAA bathymetry data for model fitting later. We create separate regions for British Columbia and the California Current but we will be focusing on the combined region that includes both areas (i.e., “bc_cc”) for this anaylsis. We also restrict the dataset to depths less than 500 m because the CTD casts only go that deep. See 02-estimate_depths_by_region.R for code.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div class="leaflet html-widget html-fill-item" id="htmlwidget-70320adf38ad02298b61" style="width:100%;height:464px;"></div>
+<script type="application/json" data-for="htmlwidget-70320adf38ad02298b61">{"x":{"options":{"minZoom":1,"maxZoom":52,"crs":{"crsClass":"L.CRS.EPSG3857","code":null,"proj4def":null,"projectedBounds":null,"options":{}},"preferCanvas":false,"bounceAtZoomLimits":false,"maxBounds":[[[-90,-370]],[[90,370]]]},"calls":[{"method":"addProviderTiles","args":["CartoDB.Positron","CartoDB.Positron","CartoDB.Positron",{"errorTileUrl":"","noWrap":false,"detectRetina":false,"pane":"tilePane"}]},{"method":"addProviderTiles","args":["CartoDB.DarkMatter","CartoDB.DarkMatter","CartoDB.DarkMatter",{"errorTileUrl":"","noWrap":false,"detectRetina":false,"pane":"tilePane"}]},{"method":"addProviderTiles","args":["OpenStreetMap","OpenStreetMap","OpenStreetMap",{"errorTileUrl":"","noWrap":false,"detectRetina":false,"pane":"tilePane"}]},{"method":"addProviderTiles","args":["Esri.WorldImagery","Esri.WorldImagery","Esri.WorldImagery",{"errorTileUrl":"","noWrap":false,"detectRetina":false,"pane":"tilePane"}]},{"method":"addProviderTiles","args":["OpenTopoMap","OpenTopoMap","OpenTopoMap",{"errorTileUrl":"","noWrap":false,"detectRetina":false,"pane":"tilePane"}]},{"method":"createMapPane","args":["polygon",420]},{"method":"addPolygons","args":[[[[{"lng":[-122.1915,-121.10365,-121.160375,-121.330575,-122.410975,-123.8957,-124.12465,-126.478,-126.880675,-127.7441,-129.414475,-130.911625,-131.602,-131.94695,-133.840475,-133.955,-133.268125,-122.3387,-122.1915],"lat":[47.728175,54.533475,54.5372,54.5482,54.612175,54.6841,54.69355000000001,54.76545,54.77315,54.78515000000001,54.79095,54.77660000000001,54.76375000000001,54.75585000000001,54.69495000000001,54.690275,47.85115,47.736825,47.728175]}]],[[{"lng":[-125.2244784,-123.5003905,-121.0702967,-121.0491195,-120.1399656,-119.8042082,-119.5740264,-118.1369976,-117.2232165,-117.2011209,-117.1967235,-117.2233712,-117.2411555,-117.2785578,-124.6655327,-124.6947502,-124.721796,-124.7488408,-124.7758844,-124.8029269,-124.8299684,-124.8570086,-124.8840478,-124.9110858,-124.9381227,-124.9651584,-124.9921929,-125.0192262,-125.0462584,-125.0732893,-125.1531176,-125.9416066,-126.0711168,-126.0947852,-126.1904079,-126.1841106,-125.2244784],"lat":[40.23038491,37.29926258,33.00490776,32.96874962,32.31227434,32.10959134,31.9798978,31.94880708,32.49697727,32.51421771,32.60412496,32.92927945999999,33.00195115,33.11132893,48.50765351,48.54284845,48.54211757000001,48.54138034,48.54063677,48.53988686,48.5391306,48.538368,48.53759906,48.53682378,48.53604215000001,48.53525419,48.53445988999999,48.53365925,48.53285227,48.53203896,48.51161009,48.23263839,48.17368733000001,48.13677683,47.70114972,47.62942761,40.23038491]}]],[[{"lng":[-117.2232165,-117.2011209,-117.1967235,-117.2233712,-121.10365,-121.160375,-121.330575,-122.410975,-123.8957,-124.12465,-126.478,-126.880675,-127.7441,-129.414475,-130.911625,-131.602,-131.94695,-133.840475,-133.955,-133.268125,-121.0491195,-120.1399656,-119.8042082,-119.5740264,-118.1369976,-117.2232165],"lat":[32.49697727,32.51421771,32.60412496,32.92927945999999,54.533475,54.5372,54.5482,54.612175,54.6841,54.69355000000001,54.76545,54.77315,54.78515000000001,54.79095,54.77660000000001,54.76375000000001,54.75585000000001,54.69495000000001,54.690275,47.85115,32.96874962,32.31227434,32.10959134,31.9798978,31.94880708,32.49697727]}]]],null,"regions.hull",{"crs":{"crsClass":"L.CRS.EPSG3857","code":null,"proj4def":null,"projectedBounds":null,"options":{}},"pane":"polygon","stroke":true,"color":"#333333","weight":0.5,"opacity":[0.9,0.9,0.9],"fill":true,"fillColor":["#4B0055","#FDE333","#009B95"],"fillOpacity":[0.6,0.6,0.6],"smoothFactor":1,"noClip":false},["<div class='scrollableContainer'><table class=mapview-popup id='popup'><tr class='coord'><td><\/td><th><b>Feature ID&emsp;<\/b><\/th><td>1&emsp;<\/td><\/tr><tr><td>1<\/td><th>region&emsp;<\/th><td>bc&emsp;<\/td><\/tr><tr><td>2<\/td><th>geometry&emsp;<\/th><td>sfc_POLYGON&emsp;<\/td><\/tr><\/table><\/div>","<div class='scrollableContainer'><table class=mapview-popup id='popup'><tr class='coord'><td><\/td><th><b>Feature ID&emsp;<\/b><\/th><td>2&emsp;<\/td><\/tr><tr><td>1<\/td><th>region&emsp;<\/th><td>cc&emsp;<\/td><\/tr><tr><td>2<\/td><th>geometry&emsp;<\/th><td>sfc_POLYGON&emsp;<\/td><\/tr><\/table><\/div>","<div class='scrollableContainer'><table class=mapview-popup id='popup'><tr class='coord'><td><\/td><th><b>Feature ID&emsp;<\/b><\/th><td>3&emsp;<\/td><\/tr><tr><td>1<\/td><th>region&emsp;<\/th><td>bc_cc&emsp;<\/td><\/tr><tr><td>2<\/td><th>geometry&emsp;<\/th><td>sfc_POLYGON&emsp;<\/td><\/tr><\/table><\/div>"],{"maxWidth":800,"minWidth":50,"autoPan":true,"keepInView":false,"closeButton":true,"closeOnClick":true,"className":""},["bc","cc","bc_cc"],{"interactive":false,"permanent":false,"direction":"auto","opacity":1,"offset":[0,0],"textsize":"10px","textOnly":false,"className":"","sticky":true},{"stroke":true,"weight":1,"opacity":0.9,"fillOpacity":0.84,"bringToFront":false,"sendToBack":false}]},{"method":"addScaleBar","args":[{"maxWidth":100,"metric":true,"imperial":true,"updateWhenIdle":true,"position":"bottomleft"}]},{"method":"addHomeButton","args":[-133.955,31.94880708,-117.1967235,54.79095,true,"regions.hull","Zoom to regions.hull","<strong> regions.hull <\/strong>","bottomright"]},{"method":"addLayersControl","args":[["CartoDB.Positron","CartoDB.DarkMatter","OpenStreetMap","Esri.WorldImagery","OpenTopoMap"],"regions.hull",{"collapsed":true,"autoZIndex":true,"position":"topleft"}]},{"method":"addLegend","args":[{"colors":["#4B0055","#009B95","#FDE333"],"labels":["bc","bc_cc","cc"],"na_color":null,"na_label":"NA","opacity":1,"position":"topright","type":"factor","title":"regions.hull","extra":null,"layerId":null,"className":"info legend","group":"regions.hull"}]}],"limits":{"lat":[31.94880708,54.79095],"lng":[-133.955,-117.1967235]},"fitBounds":[31.94880708,-133.955,54.79095,-117.1967235,[]]},"evals":[],"jsHooks":{"render":[{"code":"function(el, x, data) {\n  return (\n      function(el, x, data) {\n      // get the leaflet map\n      var map = this; //HTMLWidgets.find('#' + el.id);\n      // we need a new div element because we have to handle\n      // the mouseover output separately\n      // debugger;\n      function addElement () {\n      // generate new div Element\n      var newDiv = $(document.createElement('div'));\n      // append at end of leaflet htmlwidget container\n      $(el).append(newDiv);\n      //provide ID and style\n      newDiv.addClass('lnlt');\n      newDiv.css({\"position\":\"relative\",\"bottomleft\":\"0px\",\"background-color\":\"rgba(255, 255, 255, 0.7)\",\"box-shadow\":\"0 0 2px #bbb\",\"background-clip\":\"padding-box\",\"margin\":\"0\",\"padding-left\":\"5px\",\"padding-right\":\"5px\",\"color\":\"#333\",\"font-size\":\"9px\",\"font-family\":\"\\\"Helvetica Neue\\\", Arial, Helvetica, sans-serif\",\"text-align\":\"left\",\"z-index\":\"700\"});\n      return newDiv;\n      }\n\n\n      // check for already existing lnlt class to not duplicate\n      var lnlt = $(el).find('.lnlt');\n\n      if(!lnlt.length) {\n      lnlt = addElement();\n\n      // grab the special div we generated in the beginning\n      // and put the mousmove output there\n\n      map.on('mousemove', function (e) {\n      if (e.originalEvent.ctrlKey) {\n      if (document.querySelector('.lnlt') === null) lnlt = addElement();\n      lnlt.text(\n                           ' lon: ' + (e.latlng.lng).toFixed(5) +\n                           ' | lat: ' + (e.latlng.lat).toFixed(5) +\n                           ' | zoom: ' + map.getZoom() +\n                           ' | x: ' + L.CRS.EPSG3857.project(e.latlng).x.toFixed(0) +\n                           ' | y: ' + L.CRS.EPSG3857.project(e.latlng).y.toFixed(0) +\n                           ' | epsg: 3857 ' +\n                           ' | proj4: +proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +no_defs ');\n      } else {\n      if (document.querySelector('.lnlt') === null) lnlt = addElement();\n      lnlt.text(\n                      ' lon: ' + (e.latlng.lng).toFixed(5) +\n                      ' | lat: ' + (e.latlng.lat).toFixed(5) +\n                      ' | zoom: ' + map.getZoom() + ' ');\n      }\n      });\n\n      // remove the lnlt div when mouse leaves map\n      map.on('mouseout', function (e) {\n      var strip = document.querySelector('.lnlt');\n      if( strip !==null) strip.remove();\n      });\n\n      };\n\n      //$(el).keypress(67, function(e) {\n      map.on('preclick', function(e) {\n      if (e.originalEvent.ctrlKey) {\n      if (document.querySelector('.lnlt') === null) lnlt = addElement();\n      lnlt.text(\n                      ' lon: ' + (e.latlng.lng).toFixed(5) +\n                      ' | lat: ' + (e.latlng.lat).toFixed(5) +\n                      ' | zoom: ' + map.getZoom() + ' ');\n      var txt = document.querySelector('.lnlt').textContent;\n      console.log(txt);\n      //txt.innerText.focus();\n      //txt.select();\n      setClipboardText('\"' + txt + '\"');\n      }\n      });\n\n      }\n      ).call(this.getMap(), el, x, data);\n}","data":null},{"code":"function(el, x, data) {\n  return (function(el,x,data){\n           var map = this;\n\n           map.on('keypress', function(e) {\n               console.log(e.originalEvent.code);\n               var key = e.originalEvent.code;\n               if (key === 'KeyE') {\n                   var bb = this.getBounds();\n                   var txt = JSON.stringify(bb);\n                   console.log(txt);\n\n                   setClipboardText('\\'' + txt + '\\'');\n               }\n           })\n        }).call(this.getMap(), el, x, data);\n}","data":null}]}}</script>
+</div>
+</div>
+</section>
+<section id="prepare-mom6-data" class="level3">
+<h3 class="anchored" data-anchor-id="prepare-mom6-data">Prepare MOM6 data</h3>
+<p>Then we prepare the MOM6 data for analysis. Here we grab 3D MOM6 oxygen output from the <a href="https://psl.noaa.gov/cefi_portal/">CEFI portal</a> by year, convert it to a dataframe and match the format to the in situ data (i.e., match column naming, convert o2 units etc.). See 03-prep_mom6.R for code.</p>
+</section>
+</section>
+<section id="nearest-neighbor-analysis" class="level2">
+<h2 class="anchored" data-anchor-id="nearest-neighbor-analysis">Nearest Neighbor Analysis</h2>
+<p>We start our exploration by conducting a simple nearest neighbor analysis to evaluate how well the raw MOM6 output matches the in situ data. MOM6 data are interpolated using bilinear interpolation between spatial point (lat, lon), and linear interpolation between depths.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="skill_test_mom6_files/figure-html/unnamed-chunk-3-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 4 × 2
+   year  rmse
+  &lt;dbl&gt; &lt;dbl&gt;
+1  2011  41.0
+2  2012  36.7
+3  2013  44.0
+4  2015  29.3</code></pre>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 37.61471</code></pre>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="skill_test_mom6_files/figure-html/unnamed-chunk-5-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="skill_test_mom6_files/figure-html/unnamed-chunk-6-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="skill_test_mom6_files/figure-html/unnamed-chunk-7-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="skill_test_mom6_files/figure-html/unnamed-chunk-8-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="skill-testing-analysis" class="level2">
+<h2 class="anchored" data-anchor-id="skill-testing-analysis">Skill Testing Analysis</h2>
+<p>Then we conduct an analysis following methodology from Indivero et al., 2025 to improve the skill of the MOM6 output. Here, we extract MOM6 values at all vertical levels shallower than 500 m within a specified region (e.g., bc_cc, bc, or cc), fit a spatial model to the extracted MOM6 data, predict back to the location and depth of the in situ data, and calculate RMSE to evaluate skill.</p>
+<section id="initial-data-checks" class="level3">
+<h3 class="anchored" data-anchor-id="initial-data-checks">Initial data checks</h3>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="skill_test_mom6_files/figure-html/unnamed-chunk-9-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output cell-output-stderr">
+<pre><code>`summarise()` has grouped output by 'longitude'. You can override using the
+`.groups` argument.</code></pre>
+</div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="skill_test_mom6_files/figure-html/unnamed-chunk-10-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="skill_test_mom6_files/figure-html/unnamed-chunk-11-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The data is left skewed so let’s try and make it look more normally distributed using a quantile transformation.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="skill_test_mom6_files/figure-html/unnamed-chunk-12-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="fit-glmm-to-mom6-output-and-calculate-rmse" class="level3">
+<h3 class="anchored" data-anchor-id="fit-glmm-to-mom6-output-and-calculate-rmse">Fit GLMM to MOM6 output and calculate RMSE</h3>
+<div class="cell">
+<div class="cell-output cell-output-stdout">
+<pre><code>      mom6 n_test year
+1 53.05464  40408 2011
+2 37.40219  12912 2012
+3 32.52316  18187 2013
+4 30.89410  34914 2015</code></pre>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>     rmse_total
+mom6   41.62215</code></pre>
+</div>
+</div>
+<section id="results" class="level4">
+<h4 class="anchored" data-anchor-id="results">2011 Results</h4>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="skill_test_mom6_files/figure-html/unnamed-chunk-14-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output cell-output-stderr">
+<pre><code>`summarise()` has grouped output by 'longitude'. You can override using the
+`.groups` argument.
+`summarise()` has grouped output by 'longitude'. You can override using the
+`.groups` argument.</code></pre>
+</div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="skill_test_mom6_files/figure-html/unnamed-chunk-15-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+</section>
+</section>
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+window.document.addEventListener("DOMContentLoaded", function (event) {
+  const toggleBodyColorMode = (bsSheetEl) => {
+    const mode = bsSheetEl.getAttribute("data-mode");
+    const bodyEl = window.document.querySelector("body");
+    if (mode === "dark") {
+      bodyEl.classList.add("quarto-dark");
+      bodyEl.classList.remove("quarto-light");
+    } else {
+      bodyEl.classList.add("quarto-light");
+      bodyEl.classList.remove("quarto-dark");
+    }
+  }
+  const toggleBodyColorPrimary = () => {
+    const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
+    if (bsSheetEl) {
+      toggleBodyColorMode(bsSheetEl);
+    }
+  }
+  toggleBodyColorPrimary();  
+  const icon = "";
+  const anchorJS = new window.AnchorJS();
+  anchorJS.options = {
+    placement: 'right',
+    icon: icon
+  };
+  anchorJS.add('.anchored');
+  const isCodeAnnotation = (el) => {
+    for (const clz of el.classList) {
+      if (clz.startsWith('code-annotation-')) {                     
+        return true;
+      }
+    }
+    return false;
+  }
+  const onCopySuccess = function(e) {
+    // button target
+    const button = e.trigger;
+    // don't keep focus
+    button.blur();
+    // flash "checked"
+    button.classList.add('code-copy-button-checked');
+    var currentTitle = button.getAttribute("title");
+    button.setAttribute("title", "Copied!");
+    let tooltip;
+    if (window.bootstrap) {
+      button.setAttribute("data-bs-toggle", "tooltip");
+      button.setAttribute("data-bs-placement", "left");
+      button.setAttribute("data-bs-title", "Copied!");
+      tooltip = new bootstrap.Tooltip(button, 
+        { trigger: "manual", 
+          customClass: "code-copy-button-tooltip",
+          offset: [0, -8]});
+      tooltip.show();    
+    }
+    setTimeout(function() {
+      if (tooltip) {
+        tooltip.hide();
+        button.removeAttribute("data-bs-title");
+        button.removeAttribute("data-bs-toggle");
+        button.removeAttribute("data-bs-placement");
+      }
+      button.setAttribute("title", currentTitle);
+      button.classList.remove('code-copy-button-checked');
+    }, 1000);
+    // clear code selection
+    e.clearSelection();
+  }
+  const getTextToCopy = function(trigger) {
+      const codeEl = trigger.previousElementSibling.cloneNode(true);
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+  }
+  const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+    text: getTextToCopy
+  });
+  clipboard.on('success', onCopySuccess);
+  if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+    const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+      text: getTextToCopy,
+      container: window.document.getElementById('quarto-embedded-source-code-modal')
+    });
+    clipboardModal.on('success', onCopySuccess);
+  }
+    var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+    var mailtoRegex = new RegExp(/^mailto:/);
+      var filterRegex = new RegExp('/' + window.location.host + '/');
+    var isInternal = (href) => {
+        return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+    }
+    // Inspect non-navigation links and adorn them if external
+ 	var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+    for (var i=0; i<links.length; i++) {
+      const link = links[i];
+      if (!isInternal(link.href)) {
+        // undo the damage that might have been done by quarto-nav.js in the case of
+        // links that we want to consider external
+        if (link.dataset.originalHref !== undefined) {
+          link.href = link.dataset.originalHref;
+        }
+      }
+    }
+  function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+    const config = {
+      allowHTML: true,
+      maxWidth: 500,
+      delay: 100,
+      arrow: false,
+      appendTo: function(el) {
+          return el.parentElement;
+      },
+      interactive: true,
+      interactiveBorder: 10,
+      theme: 'quarto',
+      placement: 'bottom-start',
+    };
+    if (contentFn) {
+      config.content = contentFn;
+    }
+    if (onTriggerFn) {
+      config.onTrigger = onTriggerFn;
+    }
+    if (onUntriggerFn) {
+      config.onUntrigger = onUntriggerFn;
+    }
+    window.tippy(el, config); 
+  }
+  const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+  for (var i=0; i<noterefs.length; i++) {
+    const ref = noterefs[i];
+    tippyHover(ref, function() {
+      // use id or data attribute instead here
+      let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+      try { href = new URL(href).hash; } catch {}
+      const id = href.replace(/^#\/?/, "");
+      const note = window.document.getElementById(id);
+      if (note) {
+        return note.innerHTML;
+      } else {
+        return "";
+      }
+    });
+  }
+  const xrefs = window.document.querySelectorAll('a.quarto-xref');
+  const processXRef = (id, note) => {
+    // Strip column container classes
+    const stripColumnClz = (el) => {
+      el.classList.remove("page-full", "page-columns");
+      if (el.children) {
+        for (const child of el.children) {
+          stripColumnClz(child);
+        }
+      }
+    }
+    stripColumnClz(note)
+    if (id === null || id.startsWith('sec-')) {
+      // Special case sections, only their first couple elements
+      const container = document.createElement("div");
+      if (note.children && note.children.length > 2) {
+        container.appendChild(note.children[0].cloneNode(true));
+        for (let i = 1; i < note.children.length; i++) {
+          const child = note.children[i];
+          if (child.tagName === "P" && child.innerText === "") {
+            continue;
+          } else {
+            container.appendChild(child.cloneNode(true));
+            break;
+          }
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(container);
+        }
+        return container.innerHTML
+      } else {
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        return note.innerHTML;
+      }
+    } else {
+      // Remove any anchor links if they are present
+      const anchorLink = note.querySelector('a.anchorjs-link');
+      if (anchorLink) {
+        anchorLink.remove();
+      }
+      if (window.Quarto?.typesetMath) {
+        window.Quarto.typesetMath(note);
+      }
+      if (note.classList.contains("callout")) {
+        return note.outerHTML;
+      } else {
+        return note.innerHTML;
+      }
+    }
+  }
+  for (var i=0; i<xrefs.length; i++) {
+    const xref = xrefs[i];
+    tippyHover(xref, undefined, function(instance) {
+      instance.disable();
+      let url = xref.getAttribute('href');
+      let hash = undefined; 
+      if (url.startsWith('#')) {
+        hash = url;
+      } else {
+        try { hash = new URL(url).hash; } catch {}
+      }
+      if (hash) {
+        const id = hash.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note !== null) {
+          try {
+            const html = processXRef(id, note.cloneNode(true));
+            instance.setContent(html);
+          } finally {
+            instance.enable();
+            instance.show();
+          }
+        } else {
+          // See if we can fetch this
+          fetch(url.split('#')[0])
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.getElementById(id);
+            if (note !== null) {
+              const html = processXRef(id, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      } else {
+        // See if we can fetch a full url (with no hash to target)
+        // This is a special case and we should probably do some content thinning / targeting
+        fetch(url)
+        .then(res => res.text())
+        .then(html => {
+          const parser = new DOMParser();
+          const htmlDoc = parser.parseFromString(html, "text/html");
+          const note = htmlDoc.querySelector('main.content');
+          if (note !== null) {
+            // This should only happen for chapter cross references
+            // (since there is no id in the URL)
+            // remove the first header
+            if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+              note.children[0].remove();
+            }
+            const html = processXRef(null, note);
+            instance.setContent(html);
+          } 
+        }).finally(() => {
+          instance.enable();
+          instance.show();
+        });
+      }
+    }, function(instance) {
+    });
+  }
+      let selectedAnnoteEl;
+      const selectorForAnnotation = ( cell, annotation) => {
+        let cellAttr = 'data-code-cell="' + cell + '"';
+        let lineAttr = 'data-code-annotation="' +  annotation + '"';
+        const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+        return selector;
+      }
+      const selectCodeLines = (annoteEl) => {
+        const doc = window.document;
+        const targetCell = annoteEl.getAttribute("data-target-cell");
+        const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+        const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+        const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+        const lineIds = lines.map((line) => {
+          return targetCell + "-" + line;
+        })
+        let top = null;
+        let height = null;
+        let parent = null;
+        if (lineIds.length > 0) {
+            //compute the position of the single el (top and bottom and make a div)
+            const el = window.document.getElementById(lineIds[0]);
+            top = el.offsetTop;
+            height = el.offsetHeight;
+            parent = el.parentElement.parentElement;
+          if (lineIds.length > 1) {
+            const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+            const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+            height = bottom - top;
+          }
+          if (top !== null && height !== null && parent !== null) {
+            // cook up a div (if necessary) and position it 
+            let div = window.document.getElementById("code-annotation-line-highlight");
+            if (div === null) {
+              div = window.document.createElement("div");
+              div.setAttribute("id", "code-annotation-line-highlight");
+              div.style.position = 'absolute';
+              parent.appendChild(div);
+            }
+            div.style.top = top - 2 + "px";
+            div.style.height = height + 4 + "px";
+            div.style.left = 0;
+            let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+            if (gutterDiv === null) {
+              gutterDiv = window.document.createElement("div");
+              gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+              gutterDiv.style.position = 'absolute';
+              const codeCell = window.document.getElementById(targetCell);
+              const gutter = codeCell.querySelector('.code-annotation-gutter');
+              gutter.appendChild(gutterDiv);
+            }
+            gutterDiv.style.top = top - 2 + "px";
+            gutterDiv.style.height = height + 4 + "px";
+          }
+          selectedAnnoteEl = annoteEl;
+        }
+      };
+      const unselectCodeLines = () => {
+        const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+        elementsIds.forEach((elId) => {
+          const div = window.document.getElementById(elId);
+          if (div) {
+            div.remove();
+          }
+        });
+        selectedAnnoteEl = undefined;
+      };
+        // Handle positioning of the toggle
+    window.addEventListener(
+      "resize",
+      throttle(() => {
+        elRect = undefined;
+        if (selectedAnnoteEl) {
+          selectCodeLines(selectedAnnoteEl);
+        }
+      }, 10)
+    );
+    function throttle(fn, ms) {
+    let throttle = false;
+    let timer;
+      return (...args) => {
+        if(!throttle) { // first call gets through
+            fn.apply(this, args);
+            throttle = true;
+        } else { // all the others get throttled
+            if(timer) clearTimeout(timer); // cancel #2
+            timer = setTimeout(() => {
+              fn.apply(this, args);
+              timer = throttle = false;
+            }, ms);
+        }
+      };
+    }
+      // Attach click handler to the DT
+      const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+      for (const annoteDlNode of annoteDls) {
+        annoteDlNode.addEventListener('click', (event) => {
+          const clickedEl = event.target;
+          if (clickedEl !== selectedAnnoteEl) {
+            unselectCodeLines();
+            const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+            if (activeEl) {
+              activeEl.classList.remove('code-annotation-active');
+            }
+            selectCodeLines(clickedEl);
+            clickedEl.classList.add('code-annotation-active');
+          } else {
+            // Unselect the line
+            unselectCodeLines();
+            clickedEl.classList.remove('code-annotation-active');
+          }
+        });
+      }
+  const findCites = (el) => {
+    const parentEl = el.parentElement;
+    if (parentEl) {
+      const cites = parentEl.dataset.cites;
+      if (cites) {
+        return {
+          el,
+          cites: cites.split(' ')
+        };
+      } else {
+        return findCites(el.parentElement)
+      }
+    } else {
+      return undefined;
+    }
+  };
+  var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+  for (var i=0; i<bibliorefs.length; i++) {
+    const ref = bibliorefs[i];
+    const citeInfo = findCites(ref);
+    if (citeInfo) {
+      tippyHover(citeInfo.el, function() {
+        var popup = window.document.createElement('div');
+        citeInfo.cites.forEach(function(cite) {
+          var citeDiv = window.document.createElement('div');
+          citeDiv.classList.add('hanging-indent');
+          citeDiv.classList.add('csl-entry');
+          var biblioDiv = window.document.getElementById('ref-' + cite);
+          if (biblioDiv) {
+            citeDiv.innerHTML = biblioDiv.innerHTML;
+          }
+          popup.appendChild(citeDiv);
+        });
+        return popup.innerHTML;
+      });
+    }
+  }
+});
+</script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
