@@ -1,0 +1,5 @@
+
+
+Purpose: 
+
+We apply an empirical statistical model to expand the fine-resolution bottom oxygen data available for spatiotemporal modeling of biological data, building off Thompson, Nephin, et al. (2023) and Indivero et al 2025. This method combines multiple sources of in situ bottom dissolved oxygen observations from concurrent surveys and various independent CTD casts, fits spatiotemporal statistical models to the data, and predicts oxygen levels at biological sampling events. When there are gaps in oxygen observations of biological data, this can provide a way to estimate oxygen at fine spatial and temporal scales by interpolating to unsampled dates and locations in a robust statistical framework.
