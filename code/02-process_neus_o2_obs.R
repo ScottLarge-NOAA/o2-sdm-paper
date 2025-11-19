@@ -3,7 +3,10 @@ library(dplyr)
 library(lubridate)
 library(sf)
 library(ggplot2)
-
+library(furrr)
+library(future)
+library(sdmTMB)
+library(purrr)
 # fishbot_info <- rerddap::info(datasetid = "fishbot_realtime", url = "https://erddap.ondeckdata.com/erddap")
 # fishbot_path <- here::here("data/oxygen options/NEUS/fishbot_realtime.csv")
 
@@ -363,7 +366,7 @@ saveRDS(bathy_all, file = here::here("data/processed_data/neus_bathymetry_region
 # ggplot(bathy_all, aes(x=longitude, y=latitude))+geom_point(aes(colour=-noaadepth), size=0.2)
            
 
-## 06-predict depth by region filter ctd
+## 06-predict depth by region filter ctd -----
 
 # load bathymetry data
 # bathy_all <- readRDS(here::here("data/processed_data/neus_bathymetry_regions_from_grids.rds"))
@@ -464,14 +467,14 @@ for (i in 1:length(region_list)) {
 
 
 ##Plot
-ggplot(dat_predict, aes(x=log(depth), y=est))+
-  geom_point(aes(color = as.factor(year)), alpha = 0.2, show.legend = FALSE)+
-  geom_abline()+
-  facet_wrap(~region)+
-  coord_equal() +
-  xlab("Log(depth) Reported") +
-  ylab("Log(depth) Estimated") +
-  theme_minimal()
+# ggplot(dat_predict, aes(x=log(depth), y=est))+
+#   geom_point(aes(color = as.factor(year)), alpha = 0.2, show.legend = FALSE)+
+#   geom_abline()+
+#   facet_wrap(~region)+
+#   coord_equal() +
+#   xlab("Log(depth) Reported") +
+#   ylab("Log(depth) Estimated") +
+#   theme_minimal()
 
 source(here::here("code/helper_funs.R"))
 # Calculate RMSE by region for synoptic measurements (trawl / longline) 
@@ -512,9 +515,9 @@ dat_filtered <- st_drop_geometry(dat_filtered)
 saveRDS(object = dat_filtered, file = "data/processed_data/all_o2_dat_filtered.rds")
 
 
-### 07-fit_o2_models
+## 07-fit_o2_models -----
 
-# setup up mapping ####
+### setup up mapping #----
 map_data <- rnaturalearth::ne_countries(scale = "large",
                                         returnclass = "sf",
                                         continent = "North America")
@@ -522,7 +525,7 @@ map_data <- rnaturalearth::ne_countries(scale = "large",
 us_coast_proj <- sf::st_transform(map_data, crs = projected_crs)
 
 #Load oxygen data
-# dat <- as.data.frame(readRDS("data/processed_data/all_o2_dat_filtered.rds"))
+dat_filtered <- as.data.frame(readRDS("data/processed_data/all_o2_dat_filtered.rds"))
 
 #Remove any rows with missing data
 dat <- dat_filtered %>%
@@ -534,7 +537,13 @@ dat <- dat_filtered %>%
                           24,
                           sigma0),
          depth_ln = log(depth),
-         o2 = o2/100)
+         o2_scaled = o2/100,
+         temp_scaled = as.numeric(scale(temp)),
+         sigma0_scaled = as.numeric(scale(sigma0))
+)
+
+
+
 
 # minsigma0 <- 24
 
@@ -553,73 +562,94 @@ dat <- dat_filtered %>%
 # dat$depth_ln <- log(dat$depth)
 
 #Save model outputs?
-savemodel=T
+# savemodel=T
 #Plot models and save?
-plotmodel = F
+# plotmodel = F
 #Remove OCNMS?
-ocnms =F
+# ocnms =F
 #Restrict testing years to just if more than 50 observations?
-n_50 =T
+# n_50 =T
 
 #Scale o2?
-scale <- T
-if(scale==T){
-  dat$o2 <- dat$o2/100
-}
+# scale <- T
+# if(scale==T){
+#   dat$o2 <- dat$o2/100
+# }
 
-#test removing OCNMS
-if(ocnms){
-  dat <- filter(dat, survey!="ocnms")
-}
-
-test_region = "Georges_Bank"
+# #test removing OCNMS
+# if(ocnms){
+#   dat <- filter(dat, survey!="ocnms")
+# }
+# 
+# test_region = "Georges_Bank"
 
 #Function to fit model for a specific region
-fit_models <- function(dat, test_region, plot_title){
+# fit_models <- function(dat, test_region, plot_title){
   ##Set up data
   
   #Filter to region
-  dat.2.use <- as.data.frame(filter(dat, region == test_region))
+  # dat.2.use <- as.data.frame(filter(dat, region == test_region))
   
   #Just trawl survey data
-  trawl_dat <- dat.2.use
+  # trawl_dat <- dat.2.use
   
   # other_dat <- dat.2.use %>%
   #   filter(!(survey %in% c("nwfsc", "dfo", "goa", "EBS", "ai")))
-  
-  #Years in trawl data available
-  yearlist <- sort(unique(trawl_dat$year))
-  
-  if(n_50){
-    counts <- count(trawl_dat, year)
-    counts <- filter(counts, n>50)
-    yearlist <- sort(unique(counts$year))
-  }
-  
-  #Remove years if no non-synoptic data available
-  train_years <- unique(other_dat$year)
-  yearlist <- yearlist[which(yearlist %in% train_years)]
-  
-  #Remove NA if there
-  yearlist <- yearlist[!is.na(yearlist)]
-  
-  # General CV
+  # 
+  # #Years in trawl data available
+  # yearlist <- sort(unique(trawl_dat$year))
+  # 
+  # if(n_50){
+  #   counts <- count(trawl_dat, year)
+  #   counts <- filter(counts, n>50)
+  #   yearlist <- sort(unique(counts$year))
+  # }
+  # 
+  # #Remove years if no non-synoptic data available
+  # train_years <- unique(other_dat$year)
+  # yearlist <- yearlist[which(yearlist %in% train_years)]
+  # 
+  # #Remove NA if there
+  # yearlist <- yearlist[!is.na(yearlist)]
+  # 
 
-dat_split <- rsample::initial_split(dat, 0.8)  
+## CV
+dat_split <- dat %>% 
+  filter(region == "Mid_Atlantic_Bight") %>% 
+  rsample::initial_split(0.8)  
+
 training_data <- rsample::training(dat_split) 
 testing_data <- rsample::testing(dat_split) 
-  
-spde <- sdmTMB::make_mesh(data = training_data,
-                  xy_cols = c("X", "Y"),
-                  cutoff = 45)
 
-  
-model_frame <- data.frame(equation = paste0("m", 1:12),
-                          spatial = c("off", "off", "off", rep("on", 9)),
-                          annual = c(rep("off", 6), rep("on", 3), rep("off", 3)),
-                          spatiotemporal = c(rep("off", 9), rep("ar(1)", 3)),
-                          temp = rep(c("off", "on", "on"), 4),
-                          sal = rep(c("off", "off", "on"), 4)) %>% 
+year_to_fold_key <- training_data %>%
+  dplyr::distinct(year) %>%
+  dplyr::arrange(year) %>%
+  dplyr::mutate(fold_id = row_number())
+
+# obs_per_year <- dat %>%
+#   count(year, name = "count")
+
+
+training_data <- training_data %>%
+  dplyr::left_join(year_to_fold_key, by = "year") %>% 
+  dplyr::left_join(obs_per_year, by = "year")
+
+
+spde <- sdmTMB::make_mesh(data = dat %>% filter(region == "Mid_Atlantic_Bight"),
+                  xy_cols = c("X", "Y"),
+                  # cutoff = 45)
+                  n_knots = 250)
+
+## Table 2 
+model_frame <- data.frame(
+  equation = paste0("m", 1:12),
+  structure = c(rep("None", 3), rep("Spatial", 3), rep("Annual", 3), rep("Spatiotemporal", 3)),
+  spatial = c(rep("off", 3), rep("on", 9)),
+  annual = c(rep("off", 6), rep("on", 3), rep("off", 3)),
+  spatiotemporal = c(rep("off", 9), rep("ar1", 3)),
+  temp = rep(c("off", "on", "on"), 4),
+  sal = rep(c("off", "off", "on"), 4)
+) %>%
   mutate(
     formula = purrr::pmap(list(annual, temp, sal), function(a, t, s) {
       terms <- c("s(depth_ln)", "s(doy)")
@@ -630,16 +660,224 @@ model_frame <- data.frame(equation = paste0("m", 1:12),
       } else {
         paste(c("1", terms), collapse = " + ")
       }
-      as.formula(paste("o2 ~", rhs))
-    }),
-    time_arg = purrr::pmap(list(annual, spatiotemporal), .f = function(a, st) {
-      if (a == "on" | st != "off") {
-        "year"
-      } else {
-        NULL
-      }
+      as.formula(paste("o2_scaled ~", rhs))
     })
   )
+
+
+run_models <- function(formula, spatial, spatiotemporal, annual) {
+  
+  k_val <- length(unique(training_data$year))
+  
+  # Define the core sdmTMB arguments in a list
+  args <- list(
+    formula = formula,
+    data = training_data,
+    mesh = spde,
+    family = gaussian(),
+    spatial = spatial,
+    spatiotemporal = spatiotemporal,
+    k_folds = k_val,
+    fold_ids = training_data$fold_id
+  )
+  
+  # Conditionally set time and extra_time for temporal models
+  if (annual == "on" || spatiotemporal != "off") {
+    args$time <- "year"
+    
+    # Nested logic: extra_time is only relevant for AR1/RW models
+    if (tolower(spatiotemporal) %in% c("ar1", "rw")) {
+      all_years <- tidyr::full_seq(training_data$year, period = 1)
+      extra_years <- setdiff(all_years, unique(training_data$year))
+      if (length(extra_years) > 0) {
+        args$extra_time <- extra_years
+      }
+    }
+  }
+  
+  # Call the function with the dynamically built list of arguments
+  do.call(sdmTMB::sdmTMB_cv, args)
+}
+
+possibly_run_models <- purrr::possibly(run_models)
+
+future::plan(multisession, workers = 8)
+
+cv_fits <- model_frame %>% 
+  mutate(cv_mods = furrr::future_pmap(
+    .l = list(
+      formula = formula,
+      spatial = spatial,
+      spatiotemporal = spatiotemporal, 
+      annual = annual
+    ),
+    .f = possibly_run_models,
+    .options = furrr::furrr_options(seed = TRUE)
+  )
+  )
+plan(sequential)
+
+summary_table <- cv_fits %>% 
+  mutate(
+    # Calculate RMSE only for successful models, return NA for failed ones
+    rmse = map_dbl(cv_mods, ~{
+      if (is.null(.x)) {
+        NA_real_ # Return NA if the model is NULL
+      } else {
+        sqrt(mean((.x$data$o2_scaled - exp(.x$data$cv_predicted))^2, na.rm = TRUE))      }
+    }),
+    # Calculate MAE only for successful models, return NA for failed ones
+    mae = map_dbl(cv_mods, ~{
+      if (is.null(.x)) {
+        NA_real_ # Return NA if the model is NULL
+      } else {
+        mean(abs(.x$data$o2_scaled - exp(.x$data$cv_predicted)))      }
+    }),
+    converged = purrr::map_lgl(cv_mods, ~{
+        # 1. Extract the convergence code (an integer) from each of the k-fold fits
+      if(!is.null(.x)){
+        convergence_codes <- purrr::map_int(.x$fits, ~ .x$model$convergence)
+        
+        # 2. Return TRUE if and only if ALL folds have a convergence code of 0
+        all(convergence_codes == 0)
+      } else {
+        FALSE
+      }
+    }),
+    # Check convergence, returning FALSE for failed models
+    all_folds_ok = map_lgl(cv_mods, ~{
+      if (is.null(.x)) {
+        FALSE # A NULL model did not converge
+      } else {
+        # If the model exists, run the sanity checks
+        sanity_list <- purrr::map(.x$models, sdmTMB::sanity)
+        purrr::map_lgl(sanity_list, ~ .x$all_ok) %>% all()
+      }
+    })
+  ) %>%
+  select(-cv_mods) %>%
+  arrange(rmse)
+
+
+group_by(cv_fits$cv_mods[[2]]$data, cv_fold) |> 
+  summarize(
+    rmse = sqrt(mean((o2_scaled - cv_predicted)^2)),
+    mae = mean(abs(o2_scaled - cv_predicted))
+  )
+
+cv_fits$cv_mods[[1]]$fold_loglik
+
+# sanity_summary <- tibble(
+#   model = names(cv_fits),
+#   all_folds_ok = map_lgl(cv_fits, ~{
+#     # .x is a single sdmTMB_cv object or NULL
+#     
+#     # First, check if the model object itself is NULL
+#     if (is.null(.x)) {
+#       # A NULL model definitely did not pass the sanity check
+#       FALSE
+#     } else {
+#       # If the model is a valid object, proceed with the original sanity checks
+#       sanity_list_for_this_model <- purrr::map(.x$models, sdmTMB::sanity)
+#       
+#       # Check if the 'all_ok' flag is TRUE for every single fold
+#       purrr::map_lgl(sanity_list_for_this_model, ~ .x$all_ok) %>% all()
+#     }
+#   })
+# )
+
+
+# summary_table <- tibble(
+#   model = names(cv_fits),
+#   # Calculate RMSE only for successful models, return NA for failed ones
+#   rmse = map_dbl(cv_fits, ~{
+#     if (is.null(.x)) {
+#       NA_real_ # Return NA if the model is NULL
+#     } else {
+#       sqrt(mean((.x$data$o2_scaled - exp(.x$data$cv_predicted))^2)) # Your RMSE calculation
+#     }
+#   }),
+#   # Check convergence, returning FALSE for failed models
+#   all_folds_ok = map_lgl(cv_fits, ~{
+#     if (is.null(.x)) {
+#       FALSE # A NULL model did not converge
+#     } else {
+#       # If the model exists, run the sanity checks
+#       sanity_list <- purrr::map(.x$models, sdmTMB::sanity)
+#       purrr::map_lgl(sanity_list, ~ .x$all_ok) %>% all()
+#     }
+#   })
+# ) %>%
+#   arrange(rmse) # Sort by RMSE
+# 
+
+# 
+# summary_table <- tibble(
+#   model = names(cv_fits),
+#   rmse = purrr::map_dbl(cv_fits, ~ calculate_rmse(.x)),
+#   converged = purrr::map_lgl(cv_fits, ~ check_convergence(.x))
+# ) %>%
+#   arrange(rmse)
+# 
+# rmse_summary <- cv_fits %>% 
+#   mutate(
+#   model = names(cv_mods),
+#   converged = purrr::map_lgl(cv_mods, ~{
+#     # .x is the sdmTMB_cv object for each model
+#     if(!is.null(.x)){
+#       # 1. Extract the convergence code (an integer) from each of the k-fold fits
+#       convergence_codes <- purrr::map_int(.x$fits, ~ .x$model$convergence)
+#       
+#       # 2. Return TRUE if and only if ALL folds have a convergence code of 0
+#       all(convergence_codes == 0)
+#     } else {
+#       FALSE
+#     }
+#     
+#   }),
+#   rmse = purrr::map_dbl(cv_mods, ~{
+#     # .x represents each sdmTMB_cv object in the list
+#     if(!is.null(.x)){
+#       # Extract the data frame containing predictions for the current model
+#       predictions_df <- .x$data
+#       
+#       # Calculate RMSE, making sure to convert predictions from log scale
+#       sqrt(mean((predictions_df$o2 - exp(predictions_df$cv_predicted))^2))
+#     } else { 
+#       NA
+#     }
+#   })
+# ) %>%
+#   select(-cv_mods) %>%
+#   arrange(rmse) # Sort by RMSE to find the best model
+
+# # Print the summary table
+# print(rmse_summary)
+
+best_model <- cv_fits %>% 
+  left_join(summary_table) %>% 
+  arrange(rmse) %>% 
+  slice(1) %>%
+  pull(cv_mods) %>% 
+  .[[1]]
+
+test_predict_O2 <- try(predict(best_model, newdata = testing_data))
+
+
+# The fitted model is the first element of the list
+cv_predictions <- cv_fits %>% 
+  filter(equation == best_model)
+
+# colnames(cv_predictions)
+# Plot observed vs. predicted values from the CV
+ggplot(cv_predictions, aes(x = o2_scaled, y = cv_predicted)) +
+  geom_point(aes(color = as.factor(year)), alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
+  labs(x = "Observed Bottom Dissolved Oxygen", y = "Predicted Bottom Dissolved Oxygen (CV)", title = "Cross-Validation Performance") +
+  tune::coord_obs_pred()
+
+# Now you can inspect it
+print(single_fit)
 
 future::plan(future::multisession, workers = 4)
 # This will run the CV in parallel across your available cores.
