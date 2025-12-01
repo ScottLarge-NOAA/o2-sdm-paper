@@ -7,6 +7,8 @@ library(furrr)
 library(future)
 library(sdmTMB)
 library(purrr)
+library(recipes)
+library(rsample)
 # fishbot_info <- rerddap::info(datasetid = "fishbot_realtime", url = "https://erddap.ondeckdata.com/erddap")
 # fishbot_path <- here::here("data/oxygen options/NEUS/fishbot_realtime.csv")
 
@@ -528,117 +530,72 @@ us_coast_proj <- sf::st_transform(map_data, crs = projected_crs)
 dat_filtered <- as.data.frame(readRDS("data/processed_data/all_o2_dat_filtered.rds"))
 
 #Remove any rows with missing data
-dat <- dat_filtered %>%
+dat_cleaned <- dat_filtered %>%
   tidyr::drop_na(depth, o2, temp, sigma0, doy, X, Y, year) %>% 
   filter(depth > 0,
-         o2 < 1500,
-         o2 > 0) %>% 
+         o2 > 0,
+         o2 < 1500) %>% 
   mutate(sigma0 = if_else(sigma0 <= 24, 
                           24,
                           sigma0),
          depth_ln = log(depth),
-         o2_scaled = o2/100,
-         temp_scaled = as.numeric(scale(temp)),
-         sigma0_scaled = as.numeric(scale(sigma0))
-)
-
-
-
-
-# minsigma0 <- 24
-
-#Remove weird depths
-
-#Remove oxygen outliers
-# dat <- filter(dat, o2<1500)
-
-#Set minimum sigma
-# dat$sigma0[dat$sigma0 <= minsigma0] <- minsigma0
-
-# remove older (earlier than 2000) data
-# dat <- dplyr::filter(dat, year >=2000)
-
-#Log depth
-# dat$depth_ln <- log(dat$depth)
-
-#Save model outputs?
-# savemodel=T
-#Plot models and save?
-# plotmodel = F
-#Remove OCNMS?
-# ocnms =F
-#Restrict testing years to just if more than 50 observations?
-# n_50 =T
-
-#Scale o2?
-# scale <- T
-# if(scale==T){
-#   dat$o2 <- dat$o2/100
-# }
-
-# #test removing OCNMS
-# if(ocnms){
-#   dat <- filter(dat, survey!="ocnms")
-# }
-# 
-# test_region = "Georges_Bank"
-
-#Function to fit model for a specific region
-# fit_models <- function(dat, test_region, plot_title){
-  ##Set up data
-  
-  #Filter to region
-  # dat.2.use <- as.data.frame(filter(dat, region == test_region))
-  
-  #Just trawl survey data
-  # trawl_dat <- dat.2.use
-  
-  # other_dat <- dat.2.use %>%
-  #   filter(!(survey %in% c("nwfsc", "dfo", "goa", "EBS", "ai")))
-  # 
-  # #Years in trawl data available
-  # yearlist <- sort(unique(trawl_dat$year))
-  # 
-  # if(n_50){
-  #   counts <- count(trawl_dat, year)
-  #   counts <- filter(counts, n>50)
-  #   yearlist <- sort(unique(counts$year))
-  # }
-  # 
-  # #Remove years if no non-synoptic data available
-  # train_years <- unique(other_dat$year)
-  # yearlist <- yearlist[which(yearlist %in% train_years)]
-  # 
-  # #Remove NA if there
-  # yearlist <- yearlist[!is.na(yearlist)]
-  # 
+         o2_scaled = o2/100#,
+         # temp_scaled = as.numeric(scale(temp)),
+         # sigma0_scaled = as.numeric(scale(sigma0))
+) %>% 
+#Restrict analysis to years with more than 50 observations
+  group_by(year) %>% 
+  filter(n() > 50) %>% 
+  ungroup()
 
 ## CV
-dat_split <- dat %>% 
-  filter(region == "Mid_Atlantic_Bight") %>% 
+# dat_region <- dat_cleaned # %>% 
+  # filter(region == "Mid_Atlantic_Bight") 
+
+# year_map <- dat_region %>%
+#   distinct(year) %>%
+#   arrange(year) %>%
+#   mutate(fold_id = row_number())
+
+dat_split <- dat_cleaned %>%
+  # left_join(year_map, by = "year") %>% 
+# dat_split <- dat_region %>% 
   rsample::initial_split(0.8)  
+
 
 training_data <- rsample::training(dat_split) 
 testing_data <- rsample::testing(dat_split) 
 
-year_to_fold_key <- training_data %>%
-  dplyr::distinct(year) %>%
-  dplyr::arrange(year) %>%
-  dplyr::mutate(fold_id = row_number())
+my_recipe <- recipes::recipe(o2_scaled ~ ., data = training_data) %>%
+  recipes::step_normalize(temp, sigma0, depth_ln)
 
-# obs_per_year <- dat %>%
-#   count(year, name = "count")
+rec_prepped <- recipes::prep(my_recipe, training = training_data)
 
+baked_training_data <- recipes::bake(rec_prepped, new_data = training_data)
+baked_testing_data <- recipes::bake(rec_prepped, new_data = testing_data)
 
-training_data <- training_data %>%
-  dplyr::left_join(year_to_fold_key, by = "year") %>% 
-  dplyr::left_join(obs_per_year, by = "year")
+# baked_training_data <- baked_training_data %>%
+#   dplyr::mutate(fold_id = year)
 
 
-spde <- sdmTMB::make_mesh(data = dat %>% filter(region == "Mid_Atlantic_Bight"),
-                  xy_cols = c("X", "Y"),
-                  # cutoff = 45)
-                  n_knots = 250)
+# year_to_fold_key <- baked_training_data %>%
+#   dplyr::distinct(year) %>%
+#   dplyr::arrange(year) %>%
+#   dplyr::mutate(fold_id = row_number())
+# 
+# baked_training_data <- baked_training_data %>%
+#   dplyr::left_join(year_to_fold_key, by = "year")
+
+
+# spde <- sdmTMB::make_mesh(data = dat_cleaned %>% filter(region == "Mid_Atlantic_Bight"),
+#                   xy_cols = c("X", "Y"),
+#                   # cutoff = 45)
+#                   n_knots = 250)
+
+spde <- sdmTMB::make_mesh(data = baked_training_data,
+                          xy_cols = c("X", "Y"),
+                          # cutoff = 45)
+                          n_knots = 250)
 
 ## Table 2 
 model_frame <- data.frame(
@@ -652,46 +609,77 @@ model_frame <- data.frame(
 ) %>%
   mutate(
     formula = purrr::pmap(list(annual, temp, sal), function(a, t, s) {
-      terms <- c("s(depth_ln)", "s(doy)")
+      terms <- c("s(depth_ln)", "s(doy, bs = 'cc')")
       if (t == "on") terms <- c(terms, "s(temp)")
       if (s == "on") terms <- c(terms, "s(sigma0)")
-      rhs <- if (a == "on") {
-        paste(c("0 + as.factor(year)", terms), collapse = " + ")
-      } else {
-        paste(c("1", terms), collapse = " + ")
-      }
+      
+      intercept <- if (a == "on") "0" else "1"
+      
+      rhs <- paste(c(intercept, terms), collapse = " + ")
+      
+      # rhs <- paste(c("1", terms), collapse = " + ")
+      # rhs <- if (a == "on") {
+      #   paste(c("1 + as.factor(year)", terms), collapse = " + ")
+      # } else {
+      #   paste(c("1", terms), collapse = " + ")
+      # }
       as.formula(paste("o2_scaled ~", rhs))
     })
   )
 
+# k_val <- length(unique(baked_training_data$fold_id))
+# 
+# tt <- sdmTMB::sdmTMB_cv(
+#   formula = o2_scaled ~ 1 + s(depth_ln) + s(doy, bs = "cc"),
+#   data = baked_training_data,
+#   mesh = spde,
+#   family = gaussian(),
+#   spatial = "on",
+#   spatiotemporal = "off",
+#   k_folds = k_val,
+#   fold_ids = baked_training_data$fold_id,
+#   parallel = FALSE
+# )
+
 
 run_models <- function(formula, spatial, spatiotemporal, annual) {
   
-  k_val <- length(unique(training_data$year))
+  k_val <- length(unique(baked_training_data$year))
   
   # Define the core sdmTMB arguments in a list
   args <- list(
     formula = formula,
-    data = training_data,
+    data = baked_training_data,
     mesh = spde,
     family = gaussian(),
     spatial = spatial,
     spatiotemporal = spatiotemporal,
     k_folds = k_val,
-    fold_ids = training_data$fold_id
+    fold_ids = baked_training_data$fold_id
   )
   
-  # Conditionally set time and extra_time for temporal models
-  if (annual == "on" || spatiotemporal != "off") {
+  # Determine if ANY time component exists (Annual RW or Spatiotemporal)
+  use_time <- FALSE
+  
+  if (annual == "on") {
+    args$time_varying <- as.formula("~ 1")
     args$time <- "year"
+    use_time <- TRUE
+  }
+  
+  # Conditionally set time and extra_time for temporal models
+  if (spatiotemporal != "off") {
+    args$time <- "year"
+    use_time <- TRUE
+  }
+  # Nested logic: extra_time is only relevant for AR1/RW models
+  if (use_time) {
+    # calculate missing years based on the full sequence
+    all_years <- tidyr::full_seq(baked_training_data$year, period = 1)
+    extra_years <- setdiff(all_years, unique(baked_training_data$year))
     
-    # Nested logic: extra_time is only relevant for AR1/RW models
-    if (tolower(spatiotemporal) %in% c("ar1", "rw")) {
-      all_years <- tidyr::full_seq(training_data$year, period = 1)
-      extra_years <- setdiff(all_years, unique(training_data$year))
-      if (length(extra_years) > 0) {
-        args$extra_time <- extra_years
-      }
+    if (length(extra_years) > 0) {
+      args$extra_time <- extra_years
     }
   }
   
@@ -704,6 +692,7 @@ possibly_run_models <- purrr::possibly(run_models)
 future::plan(multisession, workers = 8)
 
 cv_fits <- model_frame %>% 
+  slice(7:9) %>%
   mutate(cv_mods = furrr::future_pmap(
     .l = list(
       formula = formula,
@@ -758,14 +747,33 @@ summary_table <- cv_fits %>%
   select(-cv_mods) %>%
   arrange(rmse)
 
+## Look at fits by fold
+predictions_by_fold <- cv_fits %>%
+  select(equation, cv_mods) %>%
+  mutate(pred_data = purrr::map(cv_mods, "data")) %>% 
+  select(-cv_mods) %>% 
+  tidyr::unnest(pred_data)
 
-group_by(cv_fits$cv_mods[[2]]$data, cv_fold) |> 
+summary_table_fold <- predictions_by_fold %>%
+  group_by(equation, year) %>% # Group by Model and Year
   summarize(
-    rmse = sqrt(mean((o2_scaled - cv_predicted)^2)),
-    mae = mean(abs(o2_scaled - cv_predicted))
-  )
+    rmse = sqrt(mean((o2_scaled - exp(cv_predicted))^2, na.rm = TRUE)),
+    mae = mean(abs(o2_scaled - exp(cv_predicted)), na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(year, rmse) # Sort to see the winner for each year
 
-cv_fits$cv_mods[[1]]$fold_loglik
+ggplot(summary_table_fold, aes(x = as.factor(year), y = equation, fill = rmse)) +
+  geom_tile() +
+  scale_fill_viridis_c() + # Darker = Better (Lower RMSE)
+  labs(
+    title = "Predictive Performance by Year",
+    x = "Test Year",
+    y = "Candidate Model",
+    fill = "RMSE"
+  ) +
+  theme_minimal()
+
 
 # sanity_summary <- tibble(
 #   model = names(cv_fits),
@@ -854,19 +862,218 @@ cv_fits$cv_mods[[1]]$fold_loglik
 # # Print the summary table
 # print(rmse_summary)
 
-best_model <- cv_fits %>% 
-  left_join(summary_table) %>% 
+
+#08 - build final model -----
+
+baked_full_data <- bake(rec_prepped, new_data = dat_cleaned)
+
+spde_full <- sdmTMB::make_mesh(
+  data = baked_full_data, 
+  xy_cols = c("X", "Y"), 
+  n_knots = 250
+)
+
+# best_model <- cv_fits %>% 
+#   left_join(summary_table) %>% 
+#   arrange(rmse) %>% 
+#   slice(1) %>%
+#   pull(cv_mods) %>% 
+#   .[[1]]
+
+best_model_id <- summary_table %>% 
   arrange(rmse) %>% 
-  slice(1) %>%
-  pull(cv_mods) %>% 
-  .[[1]]
+  slice(1) %>% 
+  pull(equation)
 
-test_predict_O2 <- try(predict(best_model, newdata = testing_data))
+best_specs <- model_frame %>% 
+  filter(equation == best_model_id)
 
 
-# The fitted model is the first element of the list
-cv_predictions <- cv_fits %>% 
-  filter(equation == best_model)
+fit_final_model <- function(specs, full_data, full_mesh) {
+  
+  # 1. Base Arguments
+  args <- list(
+    formula = specs$formula[[1]], # Extract formula from list-column
+    data = full_data,
+    mesh = full_mesh,
+    family = gaussian(),
+    spatial = specs$spatial,
+    spatiotemporal = specs$spatiotemporal
+  )
+  
+  # 2. Annual (Random Walk Intercept) logic
+  if (specs$annual == "on") {
+    args$time_varying <- as.formula("~ 1")
+    args$time <- "year"
+  }
+  
+  # 3. Spatiotemporal / Time logic
+  if (specs$spatiotemporal != "off") {
+    args$time <- "year"
+  }
+  
+  # 4. Extra Time (Bridging potential gaps in the full data set)
+  if (!is.null(args$time)) {
+    all_years <- tidyr::full_seq(full_data$year, period = 1)
+    extra_years <- setdiff(all_years, unique(full_data$year))
+    
+    if (length(extra_years) > 0) {
+      args$extra_time <- extra_years
+    }
+  }
+  
+  # 5. Run sdmTMB
+  do.call(sdmTMB::sdmTMB, args)
+}
+
+final_fit <- fit_final_model(
+  specs = best_specs,
+  full_data = baked_full_data,
+  full_mesh = spde_full
+)
+
+# 1. Generate predictions on the training data
+# This adds 'est' (link scale) and 'est_non_rf' (fixed effects only) columns
+dat_plot <- predict(final_fit)
+
+# 2. Calculate Residuals
+# randomized = TRUE is best for checking normality, but strictly Gaussian models can use standard
+dat_plot$residuals <- residuals(final_fit)
+
+# 3. Unscale everything to raw units
+# Assuming you used: o2_scaled = o2 / 100
+# And log link (if you used Gamma) or Identity link (if Gaussian)
+dat_plot <- dat_plot %>%
+  mutate(
+    # If Gaussian identity link:
+    predicted_raw = est * 100, 
+    observed_raw = o2_scaled * 100,
+    
+    # If you used Log link (Gamma):
+    # predicted_raw = exp(est) * 100,
+    # observed_raw = o2_scaled * 100
+    
+    # Depth for plotting
+    depth_raw = exp(depth_ln)
+  )
+
+ggplot(dat_plot, aes(x = observed_raw, y = predicted_raw)) +
+  # Use geom_hex if you have many points to avoid overplotting
+  geom_bin2d(bins = 50) + 
+  scale_fill_viridis_c() +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
+  labs(
+    title = "Figure 1: Predicted vs. Observed Oxygen",
+    x = "Observed Oxygen (raw units)",
+    y = "Predicted Oxygen (raw units)"
+  ) +
+  theme_minimal() +
+  coord_fixed(ratio = 1) # Keeps axes square
+
+
+ggplot(dat_plot, aes(x = depth_raw, y = residuals)) +
+  geom_point(alpha = 0.4) +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  geom_smooth(method = "gam", color = "blue") + # Add a smoother to detect bias
+  scale_x_log10() + # Log scale often helps visual inspection for depth
+  labs(
+    title = "Figure 2: Residuals by Bottom Depth",
+    x = "Depth (log scale)",
+    y = "Residuals"
+  ) +
+  theme_minimal()
+
+
+ggplot(dat_plot, aes(x = X, y = Y, color = residuals)) +
+  geom_point(size = 1, alpha = 0.8) +
+  scale_color_gradient2(midpoint = 0, low = "blue", mid = "white", high = "red") +
+  coord_fixed() +
+  labs(
+    title = "Figure 3: Spatial Residuals",
+    subtitle = "Red = Model Overpredicted; Blue = Model Underpredicted",
+    color = "Residual"
+  ) +
+  theme_dark() # Dark theme makes colors pop
+
+ggplot(dat_plot, aes(x = X, y = Y, color = predicted_raw)) +
+  geom_point(size = 0.5) +
+  scale_color_viridis_c(option = "magma") + # Magma is often good for O2 (Bright = High O2)
+  facet_wrap(~year) +
+  coord_fixed() +
+  labs(
+    title = "Figure 5: Predicted Bottom Oxygen",
+    subtitle = "Modeled concentrations over space and time",
+    color = "O2"
+  ) +
+  theme_minimal()
+
+
+# Create a dummy dataset varying Depth, holding others at their mean
+nd_depth <- data.frame(
+  depth_ln = seq(min(dat_cleaned$depth_ln), max(dat_cleaned$depth_ln), length.out = 100),
+  doy = mean(dat_cleaned$doy), # Fix seasonality
+  temp = mean(dat_cleaned$temp), # Fix temp
+  sigma0 = mean(dat_cleaned$sigma0), # Fix density
+  year = 2014 # Pick a standard year
+)
+
+# Predict
+p_depth <- predict(final_fit, newdata = nd_depth, se_fit = TRUE)
+
+# Plot
+ggplot(p_depth, aes(x = exp(depth_ln), y = est)) +
+  geom_line(size = 1) +
+  geom_ribbon(aes(ymin = est - 1.96 * est_se, ymax = est + 1.96 * est_se), alpha = 0.2) +
+  labs(
+    title = "Figure 6: Effect of Depth on Oxygen",
+    subtitle = "Shaded area is 95% CI; all other variables held constant",
+    x = "Depth (m)", y = "Predicted O2 (link scale)"
+  ) + theme_minimal()
+
+
+
+# 1. Create a prediction grid for ALL years (including the missing one)
+# grid <- ... (your spatial grid replicated for every year)
+
+# 2. Generate the index (area-weighted mean oxygen)
+# area argument is the size of your grid cells (e.g., 4 km2)
+index <- sdmTMB::get_index(
+  predict(final_fit, newdata = grid, return_tmb_object = TRUE), 
+  area = 4 
+)
+
+ggplot(index, aes(x = year, y = est)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.2) +
+  labs(
+    title = "Figure 7: Standardized Annual Oxygen Trend",
+    subtitle = "Shows the estimated regional mean O2, including the interpolated missing year",
+    y = "Total/Mean Oxygen Index"
+  ) + theme_minimal()
+
+preds <- predict(final_fit)
+
+# Plot the Spatial Random Field (omega_s)
+# If your model is 'm10-m12' (AR1), you might look at epsilon_st instead
+ggplot(preds, aes(X, Y, color = omega_s)) +
+  geom_point() +
+  scale_color_gradient2() +
+  labs(title = "Figure 8: Spatial Random Field (Unexplained Variance)")
+
+
+# Predict with standard errors
+preds_se <- predict(final_fit, newdata = grid, se_fit = TRUE)
+
+ggplot(preds_se, aes(X, Y, fill = est_se)) +
+  geom_raster() +
+  scale_fill_viridis_c(option = "inferno", direction = -1) + # Light yellow = High Uncertainty
+  facet_wrap(~year) +
+  labs(
+    title = "Figure 9: Prediction Uncertainty (Standard Error)",
+    subtitle = "Lighter colors indicate areas with lower confidence"
+  )
+
+
 
 # colnames(cv_predictions)
 # Plot observed vs. predicted values from the CV
