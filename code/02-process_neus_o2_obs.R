@@ -12,8 +12,8 @@ library(rsample)
 # fishbot_info <- rerddap::info(datasetid = "fishbot_realtime", url = "https://erddap.ondeckdata.com/erddap")
 # fishbot_path <- here::here("data/oxygen options/NEUS/fishbot_realtime.csv")
 
-ecomon_info <- rerddap::info(datasetid = "ocdbs_v_erddap1", url = "https://comet.nefsc.noaa.gov/erddap/")
-ecomon_path <- here::here("data/oxygen options/NEUS/ocdbs_v_erddap1.csv")
+# ecomon_info <- rerddap::info(datasetid = "ocdbs_v_erddap1", url = "https://comet.nefsc.noaa.gov/erddap/")
+# ecomon_path <- here::here("data/oxygen options/NEUS/ocdbs_v_erddap1.csv")
 # 
 
 projected_crs <-  sf::st_crs(32619)
@@ -641,21 +641,23 @@ model_frame <- data.frame(
 #   parallel = FALSE
 # )
 
+# data <- baked_training_data
 
-run_models <- function(formula, spatial, spatiotemporal, annual) {
+run_models <- function(formula, spatial, spatiotemporal, annual, data_input) {
   
-  k_val <- length(unique(baked_training_data$year))
+  k_val <- length(unique(data_input$year))
   
   # Define the core sdmTMB arguments in a list
   args <- list(
     formula = formula,
-    data = baked_training_data,
+    data = data_input,
     mesh = spde,
     family = gaussian(),
     spatial = spatial,
     spatiotemporal = spatiotemporal,
     k_folds = k_val,
-    fold_ids = baked_training_data$fold_id
+    fold_ids = data_input$fold_id,
+    parallel = FALSE
   )
   
   # Determine if ANY time component exists (Annual RW or Spatiotemporal)
@@ -675,8 +677,8 @@ run_models <- function(formula, spatial, spatiotemporal, annual) {
   # Nested logic: extra_time is only relevant for AR1/RW models
   if (use_time) {
     # calculate missing years based on the full sequence
-    all_years <- tidyr::full_seq(baked_training_data$year, period = 1)
-    extra_years <- setdiff(all_years, unique(baked_training_data$year))
+    all_years <- tidyr::full_seq(data_input$year, period = 1)
+    extra_years <- setdiff(all_years, unique(data_input$year))
     
     if (length(extra_years) > 0) {
       args$extra_time <- extra_years
@@ -687,26 +689,198 @@ run_models <- function(formula, spatial, spatiotemporal, annual) {
   do.call(sdmTMB::sdmTMB_cv, args)
 }
 
-possibly_run_models <- purrr::possibly(run_models)
+# Create a directory for the saved models
+if (!dir.exists(here::here("test_cases/NEUS/model_cache"))) dir.create(here::here("test_cases/NEUS/model_cache"))
 
-future::plan(multisession, workers = 8)
+# Wrapper function that handles the "Check, Run, Save" logic
+run_and_save_model <- function(formula, spatial, spatiotemporal, annual, model_id, data_input) {
+  
+  # 1. Define the unique filename
+  file_name <- paste0(here::here("test_cases/NEUS/model_cache/"), model_id, ".rds")
+  
+  # 2. Check if it already exists
+  if (file.exists(file_name)) {
+    message(paste("Skipping", model_id, "- already exists."))
+    return(readRDS(file_name))
+  }
+  
+  # 3. Force single-threaded execution
+  Sys.setenv(OMP_NUM_THREADS = "1")
+  Sys.setenv(MKL_NUM_THREADS = "1")
+  Sys.setenv(OPENBLAS_NUM_THREADS = "1")
+  Sys.setenv(BLIS_NUM_THREADS = "1")
+  
+  # 4. Run model and try to polish w/ sanity checks 
+  result <- tryCatch({
+    fit <- run_models(formula, spatial, spatiotemporal, annual, data_input = data_input)
+    
+    sanity_check <- try(sdmTMB::sanity(fit), silent = TRUE)
+    
+    if (!inherits(sanity_check, "try-error") && !sanity_check$all_ok) {
+      fit <- sdmTMB::run_extra_optimization(fit, nlminb_loops = 1, newton_loops = 1)
+    }
+    
+    fit
+  }, error = function(e) {
+    return(paste("Error:", e$message))
+  })
+  
+  # 5. Save the result immediately to disk
+  saveRDS(result, file = file_name)
+  
+  return(result)
+}
+
+
+plan(multisession, workers = 8)
 
 cv_fits <- model_frame %>% 
-  slice(7:9) %>%
   mutate(cv_mods = furrr::future_pmap(
     .l = list(
       formula = formula,
       spatial = spatial,
       spatiotemporal = spatiotemporal, 
-      annual = annual
+      annual = annual,
+      model_id = equation 
     ),
-    .f = possibly_run_models,
-    .options = furrr::furrr_options(seed = TRUE)
-  )
-  )
+    .f = run_and_save_model, 
+    data_input = baked_training_data,
+    .options = furrr::furrr_options(seed = TRUE,
+                                    scheduling = 1,
+                                    globals = c("run_models", "spde"))
+  ))
+
 plan(sequential)
+# 
+# # possibly_run_models <- purrr::possibly(run_models)
+# 
+# # Run this before plan(multisession)
+# Sys.setenv(OMP_NUM_THREADS = "1")
+# Sys.setenv(MKL_NUM_THREADS = "1")
+# Sys.setenv(OPENBLAS_NUM_THREADS = "1")
+# Sys.setenv(BLIS_NUM_THREADS = "1")
+# 
+# future::plan(multisession, workers = 8)
+# 
+# cv_fits <- model_frame %>% 
+#   # slice(7:9) %>%
+#   mutate(cv_mods = furrr::future_pmap(
+#     .l = list(
+#       formula = formula,
+#       spatial = spatial,
+#       spatiotemporal = spatiotemporal, 
+#       annual = annual
+#     ),
+#     .f = possibly_run_models,
+#     .options = furrr::furrr_options(
+#       seed = TRUE,
+#       scheduling = 1)
+#   )
+#   )
+# plan(sequential)
+file_path <- tt$model_path[[2]]
+glibrary(purrr)
+library(dplyr)
+library(sdmTMB)
+
+get_cv_metrics <- function(file_path, formula_obj) {
+  
+  # --- 1. Basic Checks ---
+  if (is.na(file_path)) return(tibble(status = "Missing Path"))
+  if (!file.exists(file_path)) return(tibble(status = "File Not Found"))
+  
+  # --- 2. Load Object ---
+  cv_obj <- readRDS(file_path)
+  
+  if (is.character(cv_obj)) {
+    return(tibble(status = "Run Error", error_msg = cv_obj))
+  }
+  
+  # --- 3. Diagnostics ---
+  fold_fits <- cv_obj$models
+  all_converged <- all(map_lgl(fold_fits, ~ .x$model$convergence == 0))
+  
+  all_sane <- all(map_lgl(fold_fits, function(x) {
+    s <- try(sdmTMB::sanity(x, silent = TRUE))
+    if (inherits(s, "try-error")) FALSE else s$all_ok
+  }))
+  
+  # --- 4. Accuracy Metrics (RMSE / MAE) ---
+  
+  # ROBUST FIX: Extract response name from the formula passed from your dataframe
+  # We convert to formula just in case it's a string, then get the first variable
+  resp_var <- all.vars(as.formula(formula_obj))[1]
+  
+  # Extract Data
+  df <- cv_obj$data
+  
+  # Check if response column exists (Safety Check)
+  if (!resp_var %in% names(df)) {
+    return(tibble(status = "Error", error_msg = paste("Column", resp_var, "not found")))
+  }
+  
+  obs <- df[[resp_var]]
+  pred <- df$cv_predicted # This is the standard sdmTMB CV prediction column
+  
+  errors <- obs - pred
+  
+  tibble(
+    status = "Success",
+    all_converged = all_converged,
+    all_sane = all_sane,
+    sum_loglik = cv_obj$sum_loglik,
+    rmse = sqrt(mean(errors^2, na.rm = TRUE)),
+    mae = mean(abs(errors), na.rm = TRUE)
+  )
+}
+results_frame <- model_frame %>% 
+  mutate(model_path = paste0(here::here("test_cases/NEUS/model_cache/"), equation, ".rds"),
+         metrics = purrr::map2(
+           .x = model_path,
+           .y = formula,
+           .f = get_cv_metrics
+         )) %>% 
+  tidyr::unnest(metrics)
+
+# View the result
+print(head(results_frame))
+# 3. View the results
+print(results_frame)
+
+
+# 2. Map this function over your paths
+# using map_dfr to automatically expand the results into columns
+metrics_df <- map_dfr(model_frame$model_path, get_model_metrics)
+
+# 3. Bind it back to your main frame
+results_frame <- bind_cols(model_frame, metrics_df)
+
+# Look at the result
+head(results_frame)
+
+
+# Find the best model by AIC
+best_model_row <- results_frame %>% 
+  filter(status == "Success", sanity_ok == TRUE) %>% 
+  arrange(aic) %>% 
+  slice(1)
+
+print(paste("Best model ID:", best_model_row$model_id))
+
+# Load ONLY the winner into RAM for plotting/predicting
+best_fit <- readRDS(best_model_row$model_path)
+
+# Now you can use standard sdmTMB tools
+sdmTMB::sanity(best_fit)
+print(best_fit)
+
+
+
+
+
 
 summary_table <- cv_fits %>% 
+  slice(2) %>%
   mutate(
     # Calculate RMSE only for successful models, return NA for failed ones
     rmse = map_dbl(cv_mods, ~{
@@ -739,7 +913,7 @@ summary_table <- cv_fits %>%
         FALSE # A NULL model did not converge
       } else {
         # If the model exists, run the sanity checks
-        sanity_list <- purrr::map(.x$models, sdmTMB::sanity)
+        sanity_list <- purrr::map(.x$models, sdmTMB::sanity, silent = TRUE)
         purrr::map_lgl(sanity_list, ~ .x$all_ok) %>% all()
       }
     })
