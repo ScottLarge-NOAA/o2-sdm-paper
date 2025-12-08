@@ -552,14 +552,15 @@ dat_cleaned <- dat_filtered %>%
 # dat_region <- dat_cleaned # %>% 
   # filter(region == "Mid_Atlantic_Bight") 
 
-# year_map <- dat_region %>%
-#   distinct(year) %>%
-#   arrange(year) %>%
-#   mutate(fold_id = row_number())
+year_map <- dat_cleaned %>%
+  distinct(year) %>%
+  arrange(year) %>%
+  mutate(fold_id = row_number())
 
-dat_split <- dat_cleaned %>%
-  # left_join(year_map, by = "year") %>% 
-# dat_split <- dat_region %>% 
+dat_cleaned <- dat_cleaned %>%
+  left_join(year_map, by = join_by(year))
+
+dat_split <- dat_cleaned %>% 
   rsample::initial_split(0.8)  
 
 
@@ -574,23 +575,6 @@ rec_prepped <- recipes::prep(my_recipe, training = training_data)
 baked_training_data <- recipes::bake(rec_prepped, new_data = training_data)
 baked_testing_data <- recipes::bake(rec_prepped, new_data = testing_data)
 
-# baked_training_data <- baked_training_data %>%
-#   dplyr::mutate(fold_id = year)
-
-
-# year_to_fold_key <- baked_training_data %>%
-#   dplyr::distinct(year) %>%
-#   dplyr::arrange(year) %>%
-#   dplyr::mutate(fold_id = row_number())
-# 
-# baked_training_data <- baked_training_data %>%
-#   dplyr::left_join(year_to_fold_key, by = "year")
-
-
-# spde <- sdmTMB::make_mesh(data = dat_cleaned %>% filter(region == "Mid_Atlantic_Bight"),
-#                   xy_cols = c("X", "Y"),
-#                   # cutoff = 45)
-#                   n_knots = 250)
 
 spde <- sdmTMB::make_mesh(data = baked_training_data,
                           xy_cols = c("X", "Y"),
@@ -616,32 +600,10 @@ model_frame <- data.frame(
       intercept <- if (a == "on") "0" else "1"
       
       rhs <- paste(c(intercept, terms), collapse = " + ")
-      
-      # rhs <- paste(c("1", terms), collapse = " + ")
-      # rhs <- if (a == "on") {
-      #   paste(c("1 + as.factor(year)", terms), collapse = " + ")
-      # } else {
-      #   paste(c("1", terms), collapse = " + ")
-      # }
       as.formula(paste("o2_scaled ~", rhs))
     })
   )
 
-# k_val <- length(unique(baked_training_data$fold_id))
-# 
-# tt <- sdmTMB::sdmTMB_cv(
-#   formula = o2_scaled ~ 1 + s(depth_ln) + s(doy, bs = "cc"),
-#   data = baked_training_data,
-#   mesh = spde,
-#   family = gaussian(),
-#   spatial = "on",
-#   spatiotemporal = "off",
-#   k_folds = k_val,
-#   fold_ids = baked_training_data$fold_id,
-#   parallel = FALSE
-# )
-
-# data <- baked_training_data
 
 run_models <- function(formula, spatial, spatiotemporal, annual, data_input) {
   
@@ -710,18 +672,12 @@ run_and_save_model <- function(formula, spatial, spatiotemporal, annual, model_i
   Sys.setenv(OPENBLAS_NUM_THREADS = "1")
   Sys.setenv(BLIS_NUM_THREADS = "1")
   
-  # 4. Run model and try to polish w/ sanity checks 
+  # 4. Run model 
   result <- tryCatch({
     fit <- run_models(formula, spatial, spatiotemporal, annual, data_input = data_input)
-    
-    sanity_check <- try(sdmTMB::sanity(fit), silent = TRUE)
-    
-    if (!inherits(sanity_check, "try-error") && !sanity_check$all_ok) {
-      fit <- sdmTMB::run_extra_optimization(fit, nlminb_loops = 1, newton_loops = 1)
-    }
-    
-    fit
+    fit 
   }, error = function(e) {
+    # If the AR1 model crashes completely (before returning), capture the error
     return(paste("Error:", e$message))
   })
   
@@ -751,88 +707,92 @@ cv_fits <- model_frame %>%
   ))
 
 plan(sequential)
-# 
-# # possibly_run_models <- purrr::possibly(run_models)
-# 
-# # Run this before plan(multisession)
-# Sys.setenv(OMP_NUM_THREADS = "1")
-# Sys.setenv(MKL_NUM_THREADS = "1")
-# Sys.setenv(OPENBLAS_NUM_THREADS = "1")
-# Sys.setenv(BLIS_NUM_THREADS = "1")
-# 
-# future::plan(multisession, workers = 8)
-# 
-# cv_fits <- model_frame %>% 
-#   # slice(7:9) %>%
-#   mutate(cv_mods = furrr::future_pmap(
-#     .l = list(
-#       formula = formula,
-#       spatial = spatial,
-#       spatiotemporal = spatiotemporal, 
-#       annual = annual
-#     ),
-#     .f = possibly_run_models,
-#     .options = furrr::furrr_options(
-#       seed = TRUE,
-#       scheduling = 1)
-#   )
-#   )
-# plan(sequential)
-file_path <- tt$model_path[[2]]
-glibrary(purrr)
-library(dplyr)
-library(sdmTMB)
 
 get_cv_metrics <- function(file_path, formula_obj) {
   
-  # --- 1. Basic Checks ---
-  if (is.na(file_path)) return(tibble(status = "Missing Path"))
+  # 1. Load File
   if (!file.exists(file_path)) return(tibble(status = "File Not Found"))
-  
-  # --- 2. Load Object ---
   cv_obj <- readRDS(file_path)
   
-  if (is.character(cv_obj)) {
-    return(tibble(status = "Run Error", error_msg = cv_obj))
-  }
+  # 2. Check for Error Message
+  if (is.character(cv_obj)) return(tibble(status = "Run Error", error_msg = cv_obj))
   
-  # --- 3. Diagnostics ---
+  # 3. Iterate through the models
   fold_fits <- cv_obj$models
-  all_converged <- all(map_lgl(fold_fits, ~ .x$model$convergence == 0))
   
   all_sane <- all(map_lgl(fold_fits, function(x) {
-    s <- try(sdmTMB::sanity(x, silent = TRUE))
+    # Check sanity for this specific fold
+    s <- try(sdmTMB::sanity(x), silent = TRUE)
     if (inherits(s, "try-error")) FALSE else s$all_ok
   }))
   
-  # --- 4. Accuracy Metrics (RMSE / MAE) ---
-  
-  # ROBUST FIX: Extract response name from the formula passed from your dataframe
-  # We convert to formula just in case it's a string, then get the first variable
+  # 4. Calculate RMSE/MAE
   resp_var <- all.vars(as.formula(formula_obj))[1]
-  
-  # Extract Data
   df <- cv_obj$data
-  
-  # Check if response column exists (Safety Check)
-  if (!resp_var %in% names(df)) {
-    return(tibble(status = "Error", error_msg = paste("Column", resp_var, "not found")))
-  }
-  
-  obs <- df[[resp_var]]
-  pred <- df$cv_predicted # This is the standard sdmTMB CV prediction column
-  
-  errors <- obs - pred
+  errors <- df[[resp_var]] - df$cv_predicted
   
   tibble(
     status = "Success",
-    all_converged = all_converged,
+    all_converged = all(map_lgl(fold_fits, ~ .x$model$convergence == 0)),
     all_sane = all_sane,
     sum_loglik = cv_obj$sum_loglik,
     rmse = sqrt(mean(errors^2, na.rm = TRUE)),
     mae = mean(abs(errors), na.rm = TRUE)
   )
 }
+
+# get_cv_metrics <- function(file_path, formula_obj) {
+#   
+#   # --- 1. Basic Checks ---
+#   if (is.na(file_path)) return(tibble(status = "Missing Path"))
+#   if (!file.exists(file_path)) return(tibble(status = "File Not Found"))
+#   
+#   # --- 2. Load Object ---
+#   cv_obj <- readRDS(file_path)
+#   
+#   if (is.character(cv_obj)) {
+#     return(tibble(status = "Run Error", error_msg = cv_obj))
+#   }
+#   
+#   # --- 3. Diagnostics ---
+#   fold_fits <- cv_obj$models
+#   
+#   all_converged <- all(map_lgl(fold_fits, ~ .x$model$convergence == 0))
+#   
+#   all_sane <- all(map_lgl(fold_fits, function(x) {
+#     s <- try(sdmTMB::sanity(x, silent = TRUE, gradient_thresh = 0.01))
+#     if (inherits(s, "try-error")) FALSE else s$all_ok
+#   }))
+#   
+#   # --- 4. Accuracy Metrics (RMSE / MAE) ---
+#   
+#   # ROBUST FIX: Extract response name from the formula passed from your dataframe
+#   # We convert to formula just in case it's a string, then get the first variable
+#   resp_var <- all.vars(as.formula(formula_obj))[1]
+#   
+#   # Extract Data
+#   df <- cv_obj$data
+#   
+#   # Check if response column exists (Safety Check)
+#   if (!resp_var %in% names(df)) {
+#     return(tibble(status = "Error", error_msg = paste("Column", resp_var, "not found")))
+#   }
+#   
+#   obs <- df[[resp_var]]
+#   pred <- df$cv_predicted # This is the standard sdmTMB CV prediction column
+#   
+#   errors <- obs - pred
+#   
+#   tibble(
+#     status = "Success",
+#     all_converged = all_converged,
+#     all_sane = all_sane,
+#     sum_loglik = cv_obj$sum_loglik,
+#     rmse = sqrt(mean(errors^2, na.rm = TRUE)),
+#     mae = mean(abs(errors), na.rm = TRUE)
+#   )
+# }
+
 results_frame <- model_frame %>% 
   mutate(model_path = paste0(here::here("test_cases/NEUS/model_cache/"), equation, ".rds"),
          metrics = purrr::map2(
@@ -842,200 +802,114 @@ results_frame <- model_frame %>%
          )) %>% 
   tidyr::unnest(metrics)
 
-# View the result
-print(head(results_frame))
-# 3. View the results
-print(results_frame)
-
-
-# 2. Map this function over your paths
-# using map_dfr to automatically expand the results into columns
-metrics_df <- map_dfr(model_frame$model_path, get_model_metrics)
-
-# 3. Bind it back to your main frame
-results_frame <- bind_cols(model_frame, metrics_df)
-
-# Look at the result
-head(results_frame)
-
-
-# Find the best model by AIC
 best_model_row <- results_frame %>% 
-  filter(status == "Success", sanity_ok == TRUE) %>% 
-  arrange(aic) %>% 
+  filter(status == "Success", all_sane == TRUE) %>% 
+  arrange(rmse) %>% 
   slice(1)
 
-print(paste("Best model ID:", best_model_row$model_id))
-
-# Load ONLY the winner into RAM for plotting/predicting
 best_fit <- readRDS(best_model_row$model_path)
 
-# Now you can use standard sdmTMB tools
-sdmTMB::sanity(best_fit)
-print(best_fit)
 
-
-
-
-
-
-summary_table <- cv_fits %>% 
-  slice(2) %>%
-  mutate(
-    # Calculate RMSE only for successful models, return NA for failed ones
-    rmse = map_dbl(cv_mods, ~{
-      if (is.null(.x)) {
-        NA_real_ # Return NA if the model is NULL
-      } else {
-        sqrt(mean((.x$data$o2_scaled - exp(.x$data$cv_predicted))^2, na.rm = TRUE))      }
-    }),
-    # Calculate MAE only for successful models, return NA for failed ones
-    mae = map_dbl(cv_mods, ~{
-      if (is.null(.x)) {
-        NA_real_ # Return NA if the model is NULL
-      } else {
-        mean(abs(.x$data$o2_scaled - exp(.x$data$cv_predicted)))      }
-    }),
-    converged = purrr::map_lgl(cv_mods, ~{
-        # 1. Extract the convergence code (an integer) from each of the k-fold fits
-      if(!is.null(.x)){
-        convergence_codes <- purrr::map_int(.x$fits, ~ .x$model$convergence)
-        
-        # 2. Return TRUE if and only if ALL folds have a convergence code of 0
-        all(convergence_codes == 0)
-      } else {
-        FALSE
-      }
-    }),
-    # Check convergence, returning FALSE for failed models
-    all_folds_ok = map_lgl(cv_mods, ~{
-      if (is.null(.x)) {
-        FALSE # A NULL model did not converge
-      } else {
-        # If the model exists, run the sanity checks
-        sanity_list <- purrr::map(.x$models, sdmTMB::sanity, silent = TRUE)
-        purrr::map_lgl(sanity_list, ~ .x$all_ok) %>% all()
-      }
-    })
-  ) %>%
-  select(-cv_mods) %>%
-  arrange(rmse)
+# 
+# 
+# 
+# 
+# summary_table <- cv_fits %>% 
+#   slice(2) %>%
+#   mutate(
+#     # Calculate RMSE only for successful models, return NA for failed ones
+#     rmse = map_dbl(cv_mods, ~{
+#       if (is.null(.x)) {
+#         NA_real_ # Return NA if the model is NULL
+#       } else {
+#         sqrt(mean((.x$data$o2_scaled - exp(.x$data$cv_predicted))^2, na.rm = TRUE))      }
+#     }),
+#     # Calculate MAE only for successful models, return NA for failed ones
+#     mae = map_dbl(cv_mods, ~{
+#       if (is.null(.x)) {
+#         NA_real_ # Return NA if the model is NULL
+#       } else {
+#         mean(abs(.x$data$o2_scaled - exp(.x$data$cv_predicted)))      }
+#     }),
+#     converged = purrr::map_lgl(cv_mods, ~{
+#         # 1. Extract the convergence code (an integer) from each of the k-fold fits
+#       if(!is.null(.x)){
+#         convergence_codes <- purrr::map_int(.x$fits, ~ .x$model$convergence)
+#         
+#         # 2. Return TRUE if and only if ALL folds have a convergence code of 0
+#         all(convergence_codes == 0)
+#       } else {
+#         FALSE
+#       }
+#     }),
+#     # Check convergence, returning FALSE for failed models
+#     all_folds_ok = map_lgl(cv_mods, ~{
+#       if (is.null(.x)) {
+#         FALSE # A NULL model did not converge
+#       } else {
+#         # If the model exists, run the sanity checks
+#         sanity_list <- purrr::map(.x$models, sdmTMB::sanity, silent = TRUE)
+#         purrr::map_lgl(sanity_list, ~ .x$all_ok) %>% all()
+#       }
+#     })
+#   ) %>%
+#   select(-cv_mods) %>%
+#   arrange(rmse)
 
 ## Look at fits by fold
+
 predictions_by_fold <- cv_fits %>%
   select(equation, cv_mods) %>%
   mutate(pred_data = purrr::map(cv_mods, "data")) %>% 
   select(-cv_mods) %>% 
   tidyr::unnest(pred_data)
 
+model_levels <- paste0("m", 1:12)
+n_years <- length(unique(summary_table_fold$year))
+
 summary_table_fold <- predictions_by_fold %>%
   group_by(equation, year) %>% # Group by Model and Year
   summarize(
-    rmse = sqrt(mean((o2_scaled - exp(cv_predicted))^2, na.rm = TRUE)),
-    mae = mean(abs(o2_scaled - exp(cv_predicted)), na.rm = TRUE),
+    rmse = sqrt(mean((o2_scaled - cv_predicted)^2, na.rm = TRUE)),
+    mae = mean(abs(o2_scaled - cv_predicted), na.rm = TRUE),
     .groups = "drop"
   ) %>%
   arrange(year, rmse) # Sort to see the winner for each year
 
-ggplot(summary_table_fold, aes(x = as.factor(year), y = equation, fill = rmse)) +
+summary_table_fold <- summary_table_fold %>% 
+  mutate(equation = factor(equation, levels = model_levels))
+
+best_index <- which(model_levels == best_model_row$equation)
+
+rect_data <- tibble(
+  # X-axis spans from the start of the first tile (0.5) to the end of the last tile (n_years + 0.5)
+  xmin = 0.5,
+  xmax = n_years + 0.5,
+  # Y-axis spans the entire winner's row index
+  ymin = best_index - 0.5,
+  ymax = best_index + 0.5
+)
+
+ggplot(summary_table_fold, aes(x = as.factor(year), y = equation, fill = rmse * 100)) +
   geom_tile() +
+  geom_rect(data = rect_data,
+            aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+            color = "black", fill = NA, linewidth = 1.2, inherit.aes = FALSE) +
   scale_fill_viridis_c() + # Darker = Better (Lower RMSE)
+  scale_x_discrete(expand = c(0, 0)) + # Removes space around the tiles
+  scale_y_discrete(expand = c(0, 0)) + # Removes space around the tiles
   labs(
     title = "Predictive Performance by Year",
     x = "Test Year",
     y = "Candidate Model",
     fill = "RMSE"
   ) +
-  theme_minimal()
-
-
-# sanity_summary <- tibble(
-#   model = names(cv_fits),
-#   all_folds_ok = map_lgl(cv_fits, ~{
-#     # .x is a single sdmTMB_cv object or NULL
-#     
-#     # First, check if the model object itself is NULL
-#     if (is.null(.x)) {
-#       # A NULL model definitely did not pass the sanity check
-#       FALSE
-#     } else {
-#       # If the model is a valid object, proceed with the original sanity checks
-#       sanity_list_for_this_model <- purrr::map(.x$models, sdmTMB::sanity)
-#       
-#       # Check if the 'all_ok' flag is TRUE for every single fold
-#       purrr::map_lgl(sanity_list_for_this_model, ~ .x$all_ok) %>% all()
-#     }
-#   })
-# )
-
-
-# summary_table <- tibble(
-#   model = names(cv_fits),
-#   # Calculate RMSE only for successful models, return NA for failed ones
-#   rmse = map_dbl(cv_fits, ~{
-#     if (is.null(.x)) {
-#       NA_real_ # Return NA if the model is NULL
-#     } else {
-#       sqrt(mean((.x$data$o2_scaled - exp(.x$data$cv_predicted))^2)) # Your RMSE calculation
-#     }
-#   }),
-#   # Check convergence, returning FALSE for failed models
-#   all_folds_ok = map_lgl(cv_fits, ~{
-#     if (is.null(.x)) {
-#       FALSE # A NULL model did not converge
-#     } else {
-#       # If the model exists, run the sanity checks
-#       sanity_list <- purrr::map(.x$models, sdmTMB::sanity)
-#       purrr::map_lgl(sanity_list, ~ .x$all_ok) %>% all()
-#     }
-#   })
-# ) %>%
-#   arrange(rmse) # Sort by RMSE
-# 
-
-# 
-# summary_table <- tibble(
-#   model = names(cv_fits),
-#   rmse = purrr::map_dbl(cv_fits, ~ calculate_rmse(.x)),
-#   converged = purrr::map_lgl(cv_fits, ~ check_convergence(.x))
-# ) %>%
-#   arrange(rmse)
-# 
-# rmse_summary <- cv_fits %>% 
-#   mutate(
-#   model = names(cv_mods),
-#   converged = purrr::map_lgl(cv_mods, ~{
-#     # .x is the sdmTMB_cv object for each model
-#     if(!is.null(.x)){
-#       # 1. Extract the convergence code (an integer) from each of the k-fold fits
-#       convergence_codes <- purrr::map_int(.x$fits, ~ .x$model$convergence)
-#       
-#       # 2. Return TRUE if and only if ALL folds have a convergence code of 0
-#       all(convergence_codes == 0)
-#     } else {
-#       FALSE
-#     }
-#     
-#   }),
-#   rmse = purrr::map_dbl(cv_mods, ~{
-#     # .x represents each sdmTMB_cv object in the list
-#     if(!is.null(.x)){
-#       # Extract the data frame containing predictions for the current model
-#       predictions_df <- .x$data
-#       
-#       # Calculate RMSE, making sure to convert predictions from log scale
-#       sqrt(mean((predictions_df$o2 - exp(predictions_df$cv_predicted))^2))
-#     } else { 
-#       NA
-#     }
-#   })
-# ) %>%
-#   select(-cv_mods) %>%
-#   arrange(rmse) # Sort by RMSE to find the best model
-
-# # Print the summary table
-# print(rmse_summary)
-
+  theme_minimal() +
+  theme(
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
 
 #08 - build final model -----
 
@@ -1054,15 +928,16 @@ spde_full <- sdmTMB::make_mesh(
 #   pull(cv_mods) %>% 
 #   .[[1]]
 
-best_model_id <- summary_table %>% 
-  arrange(rmse) %>% 
-  slice(1) %>% 
-  pull(equation)
+# best_model_id <- summary_table %>% 
+#   arrange(rmse) %>% 
+#   slice(1) %>% 
+#   pull(equation)
+# 
+# best_specs <- model_frame %>% 
+#   filter(equation == best_model_id)
 
-best_specs <- model_frame %>% 
-  filter(equation == best_model_id)
 
-
+## Start here -- need to make sure fit_final_model aligns with "run models function above. 
 fit_final_model <- function(specs, full_data, full_mesh) {
   
   # 1. Base Arguments
