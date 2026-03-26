@@ -2,11 +2,14 @@
 # 02_depth_quality_control.R
 # Purpose: Compare reported sample depths against NOAA bathymetry models. 
 #          Filters out casts where the depth error exceeds 2*RMSE.
-#          Uses robust terra raster caching for bathymetry.
+#          (EcoMon-only streamlined version)
 # ==============================================================================
 
 library(terra)
 library(marmap)
+library(dplyr)
+library(sf)
+library(sdmTMB)
 source(here::here("R", "00_config_o2.R"))
 
 message("--- Starting Depth Quality Control ---")
@@ -54,8 +57,7 @@ if (!file.exists(bathy_path)) {
   bathy_rast <- terra::rast(bathy_path)
 }
 
-# Convert the raster into a dataframe. 
-# STRUCTURAL FIX: Explicitly name the columns X_km and Y_km to match core data.
+# Convert the raster into a dataframe
 bathy_points_geo <- terra::as.points(bathy_rast) %>% st_as_sf()
 bathy_points_proj <- st_transform(bathy_points_geo, crs_projected)
 coords_km <- st_coordinates(bathy_points_proj) / 1000
@@ -71,17 +73,14 @@ message("Fitting depth expectation models...")
 maxdepth <- max(dat$depth, na.rm = TRUE) * 1.1
 depth_models <- list()
 
-# Convert bathy_df to sf using the correctly named columns
 bathy_sf <- st_as_sf(bathy_df, coords = c("X_km", "Y_km"), crs = st_crs(regions_sf), remove = FALSE)
 
 for (i in seq_along(target_regions)) {
   region_name <- target_regions[i]
   poly <- regions_hull[i, ]
   
-  # Clip bathy to region
   region_bathy <- sf::st_filter(bathy_sf, poly) %>% st_drop_geometry() %>% filter(noaadepth <= maxdepth)
   
-  # STRUCTURAL FIX: Train model natively on X_km and Y_km
   mesh <- sdmTMB::make_mesh(region_bathy, xy_cols = c("X_km", "Y_km"), cutoff = 45)
   depth_models[[region_name]] <- sdmTMB(log(noaadepth) ~ 1, data = region_bathy, 
                                         spatial = "on", mesh = mesh, family = gaussian())
@@ -107,23 +106,59 @@ for (i in seq_along(target_regions)) {
   }
 }
 
-# Separate EcoMon (CTD) from Fishbot (Synoptic/Trawl)
-ctd_dat <- dat_predict %>% filter(survey == "ecomon")
-trawl_dat <- dat_predict %>% filter(survey != "ecomon")
-
 # Calculate RMSE natively
 rmse_df <- dat_predict %>%
   group_by(predicted_region) %>%
   summarise(rmse = sqrt(mean((log(depth) - est)^2, na.rm = TRUE)), .groups = "drop")
 
-ctd_dat <- ctd_dat %>%
+# Filter out casts where depth error exceeds 2*RMSE (Applied to all data now)
+dat_filtered <- dat_predict %>%
   left_join(rmse_df, by = "predicted_region") %>%
   mutate(depth_error = log(depth) - est) %>%
-  filter(abs(depth_error) <= 2 * rmse) 
-
-# Recombine and save
-dat_filtered <- bind_rows(trawl_dat, ctd_dat) %>%
+  filter(abs(depth_error) <= 2 * rmse) %>%
   select(survey, year, doy, X_km, Y_km, latitude, longitude, temp, o2, sigma0, salinity_psu, depth, region)
 
 saveRDS(dat_filtered, file.path(der_dir, "all_o2_dat_filtered.rds"))
-message(sprintf(" [+] QC Complete. Kept %d valid observations.", nrow(dat_filtered)))
+message(sprintf(" [+] QC Complete. Kept %d valid EcoMon observations.", nrow(dat_filtered)))
+
+grid_path <- file.path(der_dir, "epu_grid.rds")
+
+if (!file.exists(grid_path)) {
+  message("Building foundational spatial prediction grid from bathymetry...")
+  
+  # A. Use the EPU boundaries already loaded in this script
+  epu_sf_grid <- read_sf(file.path(raw_dir, "EPU_NOESTUARIES.shp")) %>% 
+    st_transform(crs_projected) %>%
+    st_make_valid() %>%
+    rename_with(~"EPU", starts_with("EPU")) %>% 
+    filter(EPU %in% target_regions)
+  
+  # B. Create a blank spatial grid using your config resolution (e.g., 10000m)
+  grid_poly <- sf::st_make_grid(epu_sf_grid, cellsize = grid_res_m) %>% 
+    st_sf() %>% 
+    st_join(epu_sf_grid) %>% 
+    filter(!is.na(EPU))
+  
+  # C. Extract coordinates
+  grid_pts <- sf::st_centroid(grid_poly)
+  coords_proj <- sf::st_coordinates(grid_pts)
+  
+  # D. Extract depths from the bathymetry raster we generated in Step 2
+  grid_pts_geo <- sf::st_transform(grid_pts, crs_geographic)
+  
+  # terra::extract returns a dataframe where col 2 is the raster value
+  extracted_depths <- terra::extract(bathy_rast, terra::vect(grid_pts_geo))
+  
+  # E. Compile the final grid dataframe
+  epu_grid_base <- tibble(
+    X_km = coords_proj[,1] / 1000,
+    Y_km = coords_proj[,2] / 1000,
+    EPU = grid_pts$EPU,
+    depth = -1 * extracted_depths[,2] # Convert elevation to positive depth
+  ) %>% 
+    filter(depth > 0) %>% # Drop land/surface artifacts
+    tidyr::drop_na(depth)
+  
+  saveRDS(epu_grid_base, grid_path)
+  message(sprintf(" [+] Prediction grid successfully built with %d cells and cached!", nrow(epu_grid_base)))
+}

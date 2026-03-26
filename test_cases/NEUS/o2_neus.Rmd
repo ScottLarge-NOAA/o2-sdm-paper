@@ -3,3 +3,7 @@
 Purpose: 
 
 We apply an empirical statistical model to expand the fine-resolution bottom oxygen data available for spatiotemporal modeling of biological data, building off Thompson, Nephin, et al. (2023) and Indivero et al 2025. This method combines multiple sources of in situ bottom dissolved oxygen observations from concurrent surveys and various independent CTD casts, fits spatiotemporal statistical models to the data, and predicts oxygen levels at biological sampling events. When there are gaps in oxygen observations of biological data, this can provide a way to estimate oxygen at fine spatial and temporal scales by interpolating to unsampled dates and locations in a robust statistical framework.
+
+
+
+Preliminary model development involved rigorous structural optimization to define the baseline spatiotemporal architecture. We evaluated various spatiotemporal correlation structures (including independent and identically distributed [IID] and first-order autoregressive [AR1] fields), as well as alternative stratification proxies such as absolute density ($\sigma_\theta$). Cross-validation revealed that models incorporating complex spatiotemporal random fields or density suffered from severe multicollinearity and overfitting, failing to converge or severely degrading out-of-sample predictive skill. Consequently, a static spatial random field (Spatial = 'on', Spatiotemporal = 'off') was selected as the most parsimonious baseline architecture for all subsequent mechanistic testing."

@@ -793,8 +793,9 @@ get_cv_metrics <- function(file_path, formula_obj) {
 #   )
 # }
 
+
 results_frame <- model_frame %>% 
-  mutate(model_path = paste0(here::here("test_cases/NEUS/model_cache/"), equation, ".rds"),
+  mutate(model_path = here::here("test_cases/NEUS/model_cache", paste0( equation, ".rds")),
          metrics = purrr::map2(
            .x = model_path,
            .y = formula,
