@@ -2,7 +2,7 @@
 # 02_depth_quality_control.R
 # Purpose: Compare reported sample depths against NOAA bathymetry models. 
 #          Filters out casts where the depth error exceeds 2*RMSE.
-#          (EcoMon-only streamlined version)
+#          Evaluates collinearity of new GLORYS stratification covariates.
 # ==============================================================================
 
 library(terra)
@@ -10,9 +10,10 @@ library(marmap)
 library(dplyr)
 library(sf)
 library(sdmTMB)
+library(tidyr)
 source(here::here("R", "00_config_o2.R"))
 
-message("--- Starting Depth Quality Control ---")
+message("--- Starting Depth Quality Control & Covariate EDA ---")
 
 dat <- readRDS(file.path(der_dir, "all_o2_dat.rds"))
 
@@ -111,16 +112,37 @@ rmse_df <- dat_predict %>%
   group_by(predicted_region) %>%
   summarise(rmse = sqrt(mean((log(depth) - est)^2, na.rm = TRUE)), .groups = "drop")
 
-# Filter out casts where depth error exceeds 2*RMSE (Applied to all data now)
+# Filter out casts where depth error exceeds 2*RMSE & KEEP NEW COVARIATES
 dat_filtered <- dat_predict %>%
   left_join(rmse_df, by = "predicted_region") %>%
   mutate(depth_error = log(depth) - est) %>%
   filter(abs(depth_error) <= 2 * rmse) %>%
-  select(survey, year, doy, X_km, Y_km, latitude, longitude, temp, o2, sigma0, salinity_psu, depth, region)
+  
+  # Ensure NO NAs exist in our core modeling columns
+  tidyr::drop_na(depth, o2, temp_insitu, temp_glorys, sfc_temp_glorys, mlotst_glorys, delta_t_glorys, sigma0) %>%
+  
+  # THE FIX: Retain all original + GLORYS covariates
+  select(survey, region, date, year, month, doy, X_km, Y_km, latitude, longitude, 
+         depth, temp_insitu, temp_glorys, sfc_temp_glorys, mlotst_glorys, delta_t_glorys, 
+         salinity_psu, sigma0, o2)
 
 saveRDS(dat_filtered, file.path(der_dir, "all_o2_dat_filtered.rds"))
 message(sprintf(" [+] QC Complete. Kept %d valid EcoMon observations.", nrow(dat_filtered)))
 
+
+# --- 5. COVARIATE COLLINEARITY CHECK (For Manuscript Methods) -----------------
+message("\n--- Physical Covariate Correlation Matrix ---")
+message("Use this to justify variable selection in your SDM formulations:")
+
+covar_matrix <- dat_filtered %>%
+  select(depth, temp_insitu, temp_glorys, delta_t_glorys, mlotst_glorys, sigma0) %>%
+  cor(method = "pearson")
+
+print(round(covar_matrix, 2))
+message("---------------------------------------------\n")
+
+
+# --- 6. BUILD SPATIAL PREDICTION GRID -----------------------------------------
 grid_path <- file.path(der_dir, "epu_grid.rds")
 
 if (!file.exists(grid_path)) {
@@ -146,7 +168,6 @@ if (!file.exists(grid_path)) {
   # D. Extract depths from the bathymetry raster we generated in Step 2
   grid_pts_geo <- sf::st_transform(grid_pts, crs_geographic)
   
-  # terra::extract returns a dataframe where col 2 is the raster value
   extracted_depths <- terra::extract(bathy_rast, terra::vect(grid_pts_geo))
   
   # E. Compile the final grid dataframe
@@ -162,3 +183,4 @@ if (!file.exists(grid_path)) {
   saveRDS(epu_grid_base, grid_path)
   message(sprintf(" [+] Prediction grid successfully built with %d cells and cached!", nrow(epu_grid_base)))
 }
+
